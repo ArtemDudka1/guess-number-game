@@ -2,42 +2,26 @@ import pygame
 import random
 import math
 import json
+import sys
+
+from constants import *
 
 pygame.init()
 
-# Минимальный размер окна
-MIN_WIDTH = 1250
-MIN_HEIGHT = 900
-
-# Текущий размер окна
-WIDTH = 1500
-HEIGHT = 900
-
 screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
 pygame.display.set_caption("Угадай число")
-
-# Цвета
-WHITE = (245, 245, 245)
-BLACK = (30, 30, 30)
-BLUE = (100, 170, 255)
-RED = (255, 100, 100)
-GREEN = (100, 220, 130)
-GRAY = (170, 170, 170)
-LIGHT_GRAY = (225, 225, 225)
-DARK_GRAY = (90, 90, 90)
-YELLOW = (255, 215, 100)
-ORANGE = (255, 180, 80)
 
 # Шрифты
 font = pygame.font.Font(None, 44)
 big_font = pygame.font.Font(None, 68)
 small_font = pygame.font.Font(None, 32)
 
-# Состояния игры
-MENU = "menu"
-GAME = "game"
-
 current_screen = MENU
+
+current_popup = None
+
+popup_title = ""
+popup_text = ""
 
 # Настройки текущей игры
 min_number = 1
@@ -67,9 +51,6 @@ best_streak = 0
 total_xp = 0
 last_xp_gained = 0
 
-# Файл сохранения
-SAVE_FILE = "save_data.json"
-
 # Ставки
 selected_bet = 0
 current_bet = 0
@@ -82,19 +63,6 @@ custom_bet_error = ""
 
 # Поп-ап сброса статистики
 reset_popup_open = False
-
-# Общие настройки плиток
-TILE_SIZE = 70
-TILE_GAP = 10
-columns = 5
-
-# Правая боковая панель
-SIDEBAR_MARGIN = 30
-PANEL_WIDTH = 340
-PANEL_GAP = 25
-
-STATS_PANEL_HEIGHT = 490
-BET_PANEL_HEIGHT = 365
 
 
 def draw_center_text(text, font_obj, color, y):
@@ -142,7 +110,7 @@ def draw_button(button, font_obj):
     text = button["text"]
     color = button["color"]
 
-    pygame.draw.rect(screen, color, rect, border_radius=14)
+    pygame.draw.rect(screen, color, rect, border_radius=20)
 
     button_text = font_obj.render(text, True, BLACK)
     text_x = rect.centerx - button_text.get_width() // 2
@@ -339,19 +307,53 @@ def reset_progress():
 
 
 def get_menu_buttons():
-    button_width = 270
-    button_height = 75
-    button_gap = 25
+    button_width = 320
+    button_height = 65
+    button_gap = 20
 
-    total_height = 3 * button_height + 2 * button_gap
+    total_height = 5 * button_height + 4 * button_gap
 
-    start_x = WIDTH // 2 - 250
-    start_y = HEIGHT // 2 - total_height // 2 + 70
+    start_x = WIDTH // 2 - button_width // 2
+    start_y = HEIGHT // 2 - total_height // 2 + 40
 
     return [
-        create_button(start_x, start_y, button_width, button_height, "Лёгкая", BLUE),
-        create_button(start_x, start_y + button_height + button_gap, button_width, button_height, "Средняя", YELLOW),
-        create_button(start_x, start_y + 2 * (button_height + button_gap), button_width, button_height, "Сложная", RED)
+        create_button(start_x, start_y, button_width, button_height, "Играть", BLUE),
+
+        create_button(
+            start_x,
+            start_y + (button_height + button_gap),
+            button_width,
+            button_height,
+            "Профиль",
+            LIGHT_GRAY
+        ),
+
+        create_button(
+            start_x,
+            start_y + 2 * (button_height + button_gap),
+            button_width,
+            button_height,
+            "Достижения",
+            LIGHT_GRAY
+        ),
+
+        create_button(
+            start_x,
+            start_y + 3 * (button_height + button_gap),
+            button_width,
+            button_height,
+            "Настройки",
+            LIGHT_GRAY
+        ),
+
+        create_button(
+            start_x,
+            start_y + 4 * (button_height + button_gap),
+            button_width,
+            button_height,
+            "Выход",
+            RED
+        )
     ]
 
 
@@ -1065,21 +1067,242 @@ def draw_reset_popup():
 def draw_menu():
     screen.fill(WHITE)
 
-    draw_center_text("Угадай число", big_font, BLACK, 125)
+    draw_center_text("Угадай число", big_font, BLACK, 110)
 
-    difficulty_text = font.render("Выбери сложность", True, DARK_GRAY)
-    difficulty_x = WIDTH // 2 - 250 + 135 - difficulty_text.get_width() // 2
-    screen.blit(difficulty_text, (difficulty_x, 220))
+    subtitle = small_font.render(
+        "Главное меню",
+        True,
+        DARK_GRAY
+    )
 
-    menu_buttons = get_menu_buttons()
+    screen.blit(
+        subtitle,
+        (
+            WIDTH // 2 - subtitle.get_width() // 2,
+            190
+        )
+    )
 
-    for button in menu_buttons:
+    for button in get_menu_buttons():
         draw_button(button, font)
 
-    draw_menu_stats_panel()
+    draw_popup()
 
-    if reset_popup_open:
-        draw_reset_popup()
+
+def draw_popup():
+
+    if current_popup is None:
+        return
+
+    # Затемнение
+    overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+    overlay.fill((0, 0, 0, 120))
+    screen.blit(overlay, (0, 0))
+
+    popup_width = 500
+    popup_height = 420
+
+    popup_rect = pygame.Rect(
+        WIDTH // 2 - popup_width // 2,
+        HEIGHT // 2 - popup_height // 2,
+        popup_width,
+        popup_height
+    )
+
+    button_width = 260
+    button_height = 55
+    button_gap = 18
+
+    start_x = WIDTH // 2 - button_width // 2
+    start_y = popup_rect.y + 110
+
+    pygame.draw.rect(
+        screen,
+        WHITE,
+        popup_rect,
+        border_radius=20
+    )
+
+    if current_popup == POPUP_DIFFICULTY:
+
+        draw_center_text(
+            "Выберите сложность",
+            font,
+            BLACK,
+            popup_rect.y + 45
+        )
+
+        easy_button = create_button(
+            start_x,
+            start_y,
+            button_width,
+            button_height,
+            "Лёгкая",
+            BLUE
+        )
+
+        medium_button = create_button(
+            start_x,
+            start_y + button_height + button_gap,
+            button_width,
+            button_height,
+            "Средняя",
+            YELLOW
+        )
+
+        hard_button = create_button(
+            start_x,
+            start_y + 2 * (button_height + button_gap),
+            button_width,
+            button_height,
+            "Сложная",
+            RED
+        )
+
+        cancel_button = create_button(
+            start_x,
+            start_y + 3 * (button_height + button_gap),
+            button_width,
+            button_height,
+            "Отмена",
+            LIGHT_GRAY
+        )
+
+        draw_button(easy_button, font)
+        draw_button(medium_button, font)
+        draw_button(hard_button, font)
+        draw_button(cancel_button, font)
+
+    elif current_popup == POPUP_INFO:
+
+        draw_center_text(
+            popup_title,
+            font,
+            BLACK,
+            popup_rect.y + 45
+        )
+
+        lines = popup_text.split("\n")
+
+        for i, line in enumerate(lines):
+            draw_center_text(
+                line,
+                small_font,
+                DARK_GRAY,
+                popup_rect.y + 140 + i * 35
+            )
+
+        ok_button = create_button(
+            popup_rect.centerx - 80,
+            popup_rect.bottom - 90,
+            160,
+            50,
+            "OK",
+            BLUE
+        )
+
+        draw_button(ok_button, font)
+
+
+def handle_popup_click(mouse_pos):
+    global current_popup
+
+    if current_popup is None:
+        return
+
+    popup_width = 500
+    popup_height = 420
+
+    popup_rect = pygame.Rect(
+        WIDTH // 2 - popup_width // 2,
+        HEIGHT // 2 - popup_height // 2,
+        popup_width,
+        popup_height
+    )
+
+    if current_popup == POPUP_INFO:
+
+        ok_button = create_button(
+            popup_rect.centerx - 80,
+            popup_rect.bottom - 90,
+            160,
+            50,
+            "OK",
+            BLUE
+        )
+
+        if ok_button["rect"].collidepoint(mouse_pos):
+            current_popup = None
+
+        return
+
+    button_width = 260
+    button_height = 55
+    button_gap = 18
+
+    popup_width = 500
+    popup_height = 420
+
+    popup_rect = pygame.Rect(
+        WIDTH // 2 - popup_width // 2,
+        HEIGHT // 2 - popup_height // 2,
+        popup_width,
+        popup_height
+    )
+
+    start_x = popup_rect.centerx - button_width // 2
+    start_y = popup_rect.y + 110
+
+    easy_button = create_button(
+        start_x,
+        start_y,
+        button_width,
+        button_height,
+        "Лёгкая",
+        BLUE
+    )
+
+    medium_button = create_button(
+        start_x,
+        start_y + button_height + button_gap,
+        button_width,
+        button_height,
+        "Средняя",
+        YELLOW
+    )
+
+    hard_button = create_button(
+        start_x,
+        start_y + 2 * (button_height + button_gap),
+        button_width,
+        button_height,
+        "Сложная",
+        RED
+    )
+
+    cancel_button = create_button(
+        start_x,
+        start_y + 3 * (button_height + button_gap),
+        button_width,
+        button_height,
+        "Отмена",
+        LIGHT_GRAY
+    )
+
+    if easy_button["rect"].collidepoint(mouse_pos):
+        current_popup = None
+        set_difficulty("Лёгкая")
+
+    elif medium_button["rect"].collidepoint(mouse_pos):
+        current_popup = None
+        set_difficulty("Средняя")
+
+    elif hard_button["rect"].collidepoint(mouse_pos):
+        current_popup = None
+        set_difficulty("Сложная")
+
+    elif cancel_button["rect"].collidepoint(mouse_pos):
+        current_popup = None
 
 
 def draw_game():
@@ -1159,23 +1382,34 @@ def handle_reset_popup_click(mouse_pos):
 
 
 def handle_menu_click(mouse_pos):
-    global reset_popup_open
+    global current_popup, popup_title, popup_text
 
-    if reset_popup_open:
-        handle_reset_popup_click(mouse_pos)
-        return
+    for button in get_menu_buttons():
 
-    menu_reset_button = get_menu_reset_button()
-
-    if menu_reset_button["rect"].collidepoint(mouse_pos):
-        reset_popup_open = True
-        return
-
-    menu_buttons = get_menu_buttons()
-
-    for button in menu_buttons:
         if button["rect"].collidepoint(mouse_pos):
-            set_difficulty(button["text"])
+
+            if button["text"] == "Играть":
+                current_popup = POPUP_DIFFICULTY
+
+            elif button["text"] == "Профиль":
+                current_popup = POPUP_INFO
+                popup_title = "Профиль"
+                popup_text = "Раздел находится\nв разработке."
+
+            elif button["text"] == "Достижения":
+                current_popup = POPUP_INFO
+                popup_title = "Достижения"
+                popup_text = "Раздел находится\nв разработке."
+
+            elif button["text"] == "Настройки":
+                current_popup = POPUP_INFO
+                popup_title = "Настройки"
+                popup_text = "Раздел находится\nв разработке."
+
+
+            elif button["text"] == "Выход":
+                pygame.quit()
+                sys.exit()
 
 
 def handle_game_click(mouse_pos):
@@ -1413,7 +1647,12 @@ while running:
             mouse_position = event.pos
 
             if current_screen == MENU:
-                handle_menu_click(mouse_position)
+
+                if current_popup is None:
+                    handle_menu_click(mouse_position)
+
+                else:
+                    handle_popup_click(mouse_position)
 
             elif current_screen == GAME:
                 handle_game_click(mouse_position)
