@@ -10,7 +10,7 @@ MIN_WIDTH = 1250
 MIN_HEIGHT = 900
 
 # Текущий размер окна
-WIDTH = 1250
+WIDTH = 1500
 HEIGHT = 900
 
 screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
@@ -64,6 +64,8 @@ wins = 0
 losses = 0
 current_streak = 0
 best_streak = 0
+total_xp = 0
+last_xp_gained = 0
 
 # Файл сохранения
 SAVE_FILE = "save_data.json"
@@ -88,11 +90,11 @@ columns = 5
 
 # Правая боковая панель
 SIDEBAR_MARGIN = 30
-PANEL_WIDTH = 260
+PANEL_WIDTH = 340
 PANEL_GAP = 25
 
-STATS_PANEL_HEIGHT = 340
-BET_PANEL_HEIGHT = 430
+STATS_PANEL_HEIGHT = 490
+BET_PANEL_HEIGHT = 365
 
 
 def draw_center_text(text, font_obj, color, y):
@@ -167,16 +169,111 @@ def save_progress():
         "losses": losses,
         "current_streak": current_streak,
         "best_streak": best_streak,
-        "selected_bet": selected_bet
+        "selected_bet": selected_bet,
+        "total_xp": total_xp,
     }
 
     with open(SAVE_FILE, "w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False, indent=4)
 
 
+def add_xp(victory, difficulty_name, streak):
+    global total_xp, last_xp_gained
+    old_level = get_player_level()
+
+    xp = 0
+
+    if victory:
+        if difficulty_name == "Лёгкая":
+            xp = 8
+        elif difficulty_name == "Средняя":
+            xp = 12
+        elif difficulty_name == "Сложная":
+            xp = 18
+    else:
+        xp = 2
+
+    # Бонус за серию побед
+    if streak >= 10:
+        xp += 20
+    elif streak >= 5:
+        xp += 10
+    elif streak >= 3:
+        xp += 5
+
+    total_xp += xp
+
+    new_level = get_player_level()
+
+    if new_level > old_level:
+        level_up(new_level)
+
+    last_xp_gained = xp
+
+    save_progress()
+
+
+def debug_add_xp(amount):
+    global total_xp
+
+    old_level = get_player_level()
+
+    total_xp += amount
+
+    new_level = get_player_level()
+
+    if new_level > old_level:
+        level_up(new_level)
+
+    save_progress()
+
+
+def get_player_level():
+    level = 1
+
+    while total_xp >= get_level_required_xp(level + 1):
+        level += 1
+
+    return level
+
+
+def get_level_required_xp(level):
+    if level <= 1:
+        return 0
+
+    return 50 * (level - 1) * level // 2
+
+
+def get_current_level_progress():
+    level = get_player_level()
+
+    next_level_xp = get_level_required_xp(level + 1)
+
+    return total_xp, next_level_xp
+
+
+def get_xp_to_next_level():
+    level = get_player_level()
+
+    return get_level_required_xp(level + 1) - total_xp
+
+
+def level_up(new_level):
+    print(f"LEVEL UP -> {new_level}")
+
+    global level_up_message
+    global level_up_timer
+    global level_up_alpha
+
+    level_up_message = f"🎉 НОВЫЙ УРОВЕНЬ!\nУровень {new_level}"
+    level_up_timer = 600
+    level_up_alpha = 255
+
+
 def load_progress():
-    global score, games_played, wins, losses
+    global score, games_played, wins, losses, total_xp
     global current_streak, best_streak, selected_bet, current_bet
+    global level_up_message, level_up_timer, level_up_alpha
 
     try:
         with open(SAVE_FILE, "r", encoding="utf-8") as file:
@@ -186,6 +283,10 @@ def load_progress():
         games_played = data.get("games_played", 0)
         wins = data.get("wins", 0)
         losses = data.get("losses", 0)
+        total_xp = data.get("total_xp", 0)
+        level_up_message = ""
+        level_up_timer = 0
+        level_up_alpha = 255
         current_streak = data.get("current_streak", 0)
         best_streak = data.get("best_streak", 0)
         selected_bet = data.get("selected_bet", 0)
@@ -207,6 +308,10 @@ def reset_progress():
     global selected_bet, current_bet
     global custom_bet_text, custom_bet_error, custom_bet_active
     global reset_popup_open
+    global total_xp
+    global level_up_message
+    global level_up_timer
+    global level_up_alpha
 
     score = 0
     games_played = 0
@@ -214,6 +319,12 @@ def reset_progress():
     losses = 0
     current_streak = 0
     best_streak = 0
+
+    total_xp = 0
+
+    level_up_message = ""
+    level_up_timer = 0
+    level_up_alpha = 255
 
     selected_bet = 0
     current_bet = 0
@@ -263,10 +374,10 @@ def get_restart_button():
 
 
 def get_stats_panel_position():
-    panel_x = WIDTH - PANEL_WIDTH - SIDEBAR_MARGIN
+    total_width = PANEL_WIDTH * 2 + PANEL_GAP
 
-    total_sidebar_height = STATS_PANEL_HEIGHT + PANEL_GAP + BET_PANEL_HEIGHT
-    panel_y = (HEIGHT - total_sidebar_height) // 2
+    panel_x = WIDTH - total_width - SIDEBAR_MARGIN
+    panel_y = (HEIGHT - STATS_PANEL_HEIGHT) // 2
 
     if panel_y < SIDEBAR_MARGIN:
         panel_y = SIDEBAR_MARGIN
@@ -277,8 +388,8 @@ def get_stats_panel_position():
 def get_bet_panel_position():
     stats_x, stats_y, stats_width, stats_height = get_stats_panel_position()
 
-    panel_x = stats_x
-    panel_y = stats_y + stats_height + PANEL_GAP
+    panel_x = stats_x + PANEL_WIDTH + PANEL_GAP
+    panel_y = stats_y
 
     return panel_x, panel_y, PANEL_WIDTH, BET_PANEL_HEIGHT
 
@@ -289,7 +400,7 @@ def get_reset_button():
     button_width = 180
     button_height = 36
     button_x = panel_x + (panel_width - button_width) // 2
-    button_y = panel_y + panel_height - button_height - 15
+    button_y = panel_y + 412
 
     return create_button(button_x, button_y, button_width, button_height, "Сброс", WHITE)
 
@@ -373,7 +484,7 @@ def get_bet_buttons():
     button_gap = 7
 
     start_x = panel_x + (panel_width - button_width) // 2
-    start_y = panel_y + 55
+    start_y = panel_y + 62
 
     buttons = []
 
@@ -421,7 +532,7 @@ def get_custom_bet_input_rect():
     total_width = input_width + gap_between + apply_button_width
 
     input_x = panel_x + (panel_width - total_width) // 2
-    input_y = panel_y + 300
+    input_y = panel_y + 312
 
     return pygame.Rect(input_x, input_y, input_width, input_height)
 
@@ -543,6 +654,7 @@ def finish_game(player_won):
     if player_won:
         wins += 1
         current_streak += 1
+        add_xp(True, difficulty_name, current_streak)
 
         if current_streak > best_streak:
             best_streak = current_streak
@@ -568,6 +680,7 @@ def finish_game(player_won):
 
     losses += 1
     current_streak = 0
+    add_xp(False, difficulty_name, 0)
 
     base_penalty = get_loss_penalty()
     bet_penalty = current_bet
@@ -686,21 +799,97 @@ def set_difficulty(name):
 def draw_stats_panel():
     panel_x, panel_y, panel_width, panel_height = get_stats_panel_position()
 
+    current_xp, max_xp = get_current_level_progress()
+
     panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
     pygame.draw.rect(screen, LIGHT_GRAY, panel_rect, border_radius=14)
 
-    draw_text("Статистика", small_font, BLACK, panel_x + 22, panel_y + 15)
-    draw_text(f"Очки: {score}", small_font, DARK_GRAY, panel_x + 22, panel_y + 48)
-    draw_text(f"Ставка: {selected_bet}", small_font, DARK_GRAY, panel_x + 22, panel_y + 76)
-    draw_text(f"Множитель: x{get_streak_multiplier():.1f}", small_font, DARK_GRAY, panel_x + 22, panel_y + 104)
-    draw_text(f"Игры: {games_played}", small_font, DARK_GRAY, panel_x + 22, panel_y + 132)
-    draw_text(f"Победы: {wins}", small_font, DARK_GRAY, panel_x + 22, panel_y + 160)
-    draw_text(f"Поражения: {losses}", small_font, DARK_GRAY, panel_x + 22, panel_y + 188)
-    draw_text(f"Серия: {current_streak}", small_font, DARK_GRAY, panel_x + 22, panel_y + 216)
-    draw_text(f"Лучшая серия: {best_streak}", small_font, DARK_GRAY, panel_x + 22, panel_y + 244)
+    # Заголовок
+    draw_text("Статистика", small_font, BLACK, panel_x + 22, panel_y + 20)
+
+    # ===== Экономика =====
+    draw_text(f"Очки: {score}", small_font, DARK_GRAY, panel_x + 22, panel_y + 70)
+    # Уровень
+    draw_text(f"Уровень: {get_player_level()}", small_font, DARK_GRAY, panel_x + 22, panel_y + 120)
+    # XP
+    draw_text("XP", small_font, DARK_GRAY, panel_x + 22, panel_y + 170)
+
+    # Сам прогресс XP
+    draw_text(
+        f"{current_xp} / {max_xp}",
+        small_font,
+        BLACK,
+        panel_x + 22,
+        panel_y + 205
+    )
+
+    draw_xp_bar(
+        panel_x + 22,
+        panel_y + 240,
+        panel_width - 44,
+        18
+    )
+    #draw_text(f"Ставка: {selected_bet}", small_font, DARK_GRAY, panel_x + 22, panel_y + 128)
+    #draw_text(f"Множитель: x{get_streak_multiplier():.1f}", small_font, DARK_GRAY, panel_x + 22, panel_y + 164)
+
+    # Разделитель
+    pygame.draw.line(
+        screen,
+        (190, 190, 190),
+        (panel_x + 18, panel_y + 280),
+        (panel_x + panel_width - 18, panel_y + 280),
+        2
+    )
+
+    # ===== Игровая статистика =====
+    #draw_text(f"Игры: {games_played}", small_font, DARK_GRAY, panel_x + 22, panel_y + 222)
+    #draw_text(f"Победы: {wins}", small_font, DARK_GRAY, panel_x + 22, panel_y + 258)
+    #draw_text(f"Поражения: {losses}", small_font, DARK_GRAY, panel_x + 22, panel_y + 294)
+    draw_text(f"Серия: {current_streak}", small_font, DARK_GRAY, panel_x + 22, panel_y + 305)
+    draw_text(f"Лучшая серия: {best_streak}", small_font, DARK_GRAY, panel_x + 22, panel_y + 355)
+
+    # Разделитель
+    pygame.draw.line(
+        screen,
+        (190, 190, 190),
+        (panel_x + 18, panel_y + 402),
+        (panel_x + panel_width - 18, panel_y + 402),
+        2
+    )
 
     reset_button = get_reset_button()
     draw_button(reset_button, small_font)
+
+
+def draw_xp_bar(x, y, width, height):
+    current_xp, max_xp = get_current_level_progress()
+
+    progress = current_xp / max_xp if max_xp > 0 else 0
+
+    # Фон
+    pygame.draw.rect(
+        screen,
+        (205, 205, 205),
+        (x, y, width, height),
+        border_radius=8
+    )
+
+    # Заполнение
+    pygame.draw.rect(
+        screen,
+        (100, 220, 130),
+        (x, y, int(width * progress), height),
+        border_radius=8
+    )
+
+    # Обводка
+    pygame.draw.rect(
+        screen,
+        (150, 150, 150),
+        (x, y, width, height),
+        2,
+        border_radius=8
+    )
 
 
 def draw_menu_stats_panel():
@@ -725,10 +914,39 @@ def draw_menu_stats_panel():
     draw_button(reset_button, small_font)
 
 
+def draw_level_up_message():
+    global level_up_timer
+    global level_up_alpha
+
+    if level_up_timer <= 0:
+        return
+
+    level_up_timer -= 1
+
+    # Первые 180 кадров ничего не исчезает
+    if level_up_timer > 180:
+        level_up_alpha = 255
+    else:
+        level_up_alpha = int(255 * (level_up_timer / 180))
+
+    lines = level_up_message.split("\n")
+
+    y = 40
+
+    for line in lines:
+        text = big_font.render(line, True, (255, 215, 0))
+        text.set_alpha(level_up_alpha)
+
+        x = WIDTH // 2 - text.get_width() // 2
+
+        screen.blit(text, (x, y))
+
+        y += 50
+
 def draw_custom_bet_input():
     panel_x, panel_y, panel_width, panel_height = get_bet_panel_position()
 
-    label_y = panel_y + 270
+    label_y = panel_y + 278
 
     label_text = small_font.render("Своя ставка", True, BLACK)
     label_x = panel_x + panel_width // 2 - label_text.get_width() // 2
@@ -808,6 +1026,14 @@ def draw_bet_panel():
 
     for button in bet_buttons:
         draw_button(button, small_font)
+
+    pygame.draw.line(
+        screen,
+        (190, 190, 190),
+        (panel_x + 18, panel_y + 260),
+        (panel_x + panel_width - 18, panel_y + 260),
+        2
+    )
 
     draw_custom_bet_input()
 
@@ -913,6 +1139,8 @@ def draw_game():
 
     if reset_popup_open:
         draw_reset_popup()
+
+    draw_level_up_message()
 
 
 def handle_reset_popup_click(mouse_pos):
@@ -1120,6 +1348,50 @@ def handle_custom_bet_typing(event):
             custom_bet_error = ""
 
 
+def handle_debug_keys(event):
+    global total_xp
+    global score
+    global current_streak
+    global best_streak
+
+    mods = pygame.key.get_mods()
+
+    # Ctrl + 1 = +10 XP
+    if mods & pygame.KMOD_CTRL and event.key == pygame.K_1:
+        debug_add_xp(10)
+
+    # Ctrl + 2 = +50 XP
+    elif mods & pygame.KMOD_CTRL and event.key == pygame.K_2:
+        debug_add_xp(50)
+
+    # Ctrl + 3 = +250 XP
+    elif mods & pygame.KMOD_CTRL and event.key == pygame.K_3:
+        debug_add_xp(250)
+
+    # Ctrl + 4 = +1000 XP
+    elif mods & pygame.KMOD_CTRL and event.key == pygame.K_4:
+        debug_add_xp(1000)
+
+    # Ctrl + 5 = +10000 очков
+    elif mods & pygame.KMOD_CTRL and event.key == pygame.K_5:
+        score += 10000
+        save_progress()
+
+    # Ctrl + 6 = Сброс XP
+    elif mods & pygame.KMOD_CTRL and event.key == pygame.K_6:
+        total_xp = 0
+        save_progress()
+
+    # Ctrl + 7 = +1 к серии
+    elif mods & pygame.KMOD_CTRL and event.key == pygame.K_7:
+        current_streak += 1
+
+        if current_streak > best_streak:
+            best_streak = current_streak
+
+        save_progress()
+
+
 load_progress()
 
 running = True
@@ -1149,6 +1421,7 @@ while running:
         if event.type == pygame.KEYDOWN:
             if current_screen == GAME:
                 handle_custom_bet_typing(event)
+            handle_debug_keys(event)
 
     if current_screen == MENU:
         draw_menu()
