@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+
+# PyCharm
+.idea/
+
+# macOS
+.DS_Store
+
+# Virtual environments
+venv/
+.env/
+
+# Save files
+save_data.json
