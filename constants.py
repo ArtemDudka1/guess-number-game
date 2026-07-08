@@ -21,6 +21,7 @@ ORANGE = (255, 180, 80)
 # Состояния игры
 MENU = "menu"
 GAME = "game"
+PROFILE = "profile"
 
 # Файл сохранения
 SAVE_FILE = "save_data.json"

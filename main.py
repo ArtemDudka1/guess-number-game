@@ -15,6 +15,7 @@ pygame.display.set_caption("Угадай число")
 font = pygame.font.Font(None, 44)
 big_font = pygame.font.Font(None, 68)
 small_font = pygame.font.Font(None, 32)
+title_font = pygame.font.SysFont("Arial", 44, bold=True)
 
 current_screen = MENU
 
@@ -50,6 +51,9 @@ current_streak = 0
 best_streak = 0
 total_xp = 0
 last_xp_gained = 0
+
+# Профиль
+player_name = "Player"
 
 # Ставки
 selected_bet = 0
@@ -139,6 +143,7 @@ def save_progress():
         "best_streak": best_streak,
         "selected_bet": selected_bet,
         "total_xp": total_xp,
+        "player_name": player_name,
     }
 
     with open(SAVE_FILE, "w", encoding="utf-8") as file:
@@ -242,6 +247,7 @@ def load_progress():
     global score, games_played, wins, losses, total_xp
     global current_streak, best_streak, selected_bet, current_bet
     global level_up_message, level_up_timer, level_up_alpha
+    global player_name
 
     try:
         with open(SAVE_FILE, "r", encoding="utf-8") as file:
@@ -258,6 +264,7 @@ def load_progress():
         current_streak = data.get("current_streak", 0)
         best_streak = data.get("best_streak", 0)
         selected_bet = data.get("selected_bet", 0)
+        player_name = data.get("player_name", "Player")
 
         if selected_bet > score:
             selected_bet = 0
@@ -1089,6 +1096,131 @@ def draw_menu():
     draw_popup()
 
 
+def draw_profile():
+    screen.fill(WHITE)
+
+    draw_center_text("Профиль", title_font, BLACK, 40)
+
+    avatar_center = (WIDTH // 2, 185)
+
+    pygame.draw.circle(
+        screen,
+        LIGHT_GRAY,
+        avatar_center,
+        75
+    )
+
+    pygame.draw.circle(
+        screen,
+        DARK_GRAY,
+        avatar_center,
+        75,
+        2
+    )
+
+    draw_center_text(
+        player_name,
+        font,
+        BLACK,
+        290
+    )
+
+    pygame.draw.line(
+        screen,
+        LIGHT_GRAY,
+        (120, 340),
+        (WIDTH - 120, 340),
+        2
+    )
+
+    level = get_player_level()
+    current_xp, max_xp = get_current_level_progress()
+
+    draw_center_text(
+        f"Уровень {level}",
+        font,
+        BLACK,
+        375
+    )
+
+    bar_width = 420
+    bar_height = 22
+
+    bar_x = WIDTH // 2 - bar_width // 2
+    bar_y = 325
+
+    pygame.draw.rect(
+        screen,
+        LIGHT_GRAY,
+        (bar_x, bar_y, bar_width, bar_height),
+        border_radius=15
+    )
+
+    fill_width = int(bar_width * current_xp / max_xp)
+
+    pygame.draw.rect(
+        screen,
+        BLUE,
+        (bar_x, bar_y, fill_width, bar_height),
+        border_radius=15
+    )
+
+    draw_center_text(
+        f"{current_xp} / {max_xp} XP",
+        small_font,
+        DARK_GRAY,
+        455
+    )
+
+    pygame.draw.line(
+        screen,
+        LIGHT_GRAY,
+        (120, 500),
+        (WIDTH - 120, 500),
+        2
+    )
+
+    draw_center_text(
+        "Статистика",
+        font,
+        BLACK,
+        530
+    )
+
+    left_x = WIDTH // 2 - 220
+    right_x = WIDTH // 2 + 220
+
+    stats = [
+        ("Очки", score),
+        ("Победы", wins),
+        ("Поражения", losses),
+        ("Всего игр", games_played),
+        ("Лучшая серия", best_streak)
+    ]
+
+    y = 585
+
+    for title, value in stats:
+        title_surface = font.render(title, True, DARK_GRAY)
+        value_surface = font.render(str(value), True, BLACK)
+
+        screen.blit(title_surface, (left_x, y))
+        screen.blit(value_surface, (right_x - value_surface.get_width(), y))
+
+        y += 45
+
+    back_button = create_button(
+        40,
+        HEIGHT - 80,
+        180,
+        50,
+        "Назад",
+        LIGHT_GRAY
+    )
+
+    draw_button(back_button, font)
+
+
 def draw_popup():
 
     if current_popup is None:
@@ -1382,7 +1514,7 @@ def handle_reset_popup_click(mouse_pos):
 
 
 def handle_menu_click(mouse_pos):
-    global current_popup, popup_title, popup_text
+    global current_popup, popup_title, popup_text, current_screen
 
     for button in get_menu_buttons():
 
@@ -1391,10 +1523,9 @@ def handle_menu_click(mouse_pos):
             if button["text"] == "Играть":
                 current_popup = POPUP_DIFFICULTY
 
+
             elif button["text"] == "Профиль":
-                current_popup = POPUP_INFO
-                popup_title = "Профиль"
-                popup_text = "Раздел находится\nв разработке."
+                current_screen = PROFILE
 
             elif button["text"] == "Достижения":
                 current_popup = POPUP_INFO
@@ -1410,6 +1541,22 @@ def handle_menu_click(mouse_pos):
             elif button["text"] == "Выход":
                 pygame.quit()
                 sys.exit()
+
+
+def handle_profile_click(mouse_pos):
+    global current_screen
+
+    back_button = create_button(
+        40,
+        HEIGHT - 80,
+        180,
+        50,
+        "Назад",
+        LIGHT_GRAY
+    )
+
+    if back_button["rect"].collidepoint(mouse_pos):
+        current_screen = MENU
 
 
 def handle_game_click(mouse_pos):
@@ -1657,6 +1804,9 @@ while running:
             elif current_screen == GAME:
                 handle_game_click(mouse_position)
 
+            elif current_screen == PROFILE:
+                handle_profile_click(mouse_position)
+
         if event.type == pygame.KEYDOWN:
             if current_screen == GAME:
                 handle_custom_bet_typing(event)
@@ -1667,6 +1817,9 @@ while running:
 
     elif current_screen == GAME:
         draw_game()
+
+    elif current_screen == PROFILE:
+        draw_profile()
 
     pygame.display.flip()
 
