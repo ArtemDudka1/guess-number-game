@@ -21,7 +21,6 @@ title_font = pygame.font.SysFont("Arial", 44, bold=True)
 current_screen = MENU
 
 current_popup = None
-
 popup_title = ""
 popup_text = ""
 
@@ -231,7 +230,7 @@ def handle_text_input_keyboard(text_input, event):
         text_input["text"] = text_input["text"][:-1]
         return
 
-    if event.key == pygame.K_ESCAPE:
+    if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
         text_input["active"] = False
         return
 
@@ -1282,14 +1281,25 @@ def draw_profile():
         player_name,
         font,
         BLACK,
-        290
+        280
     )
+
+    change_name_button = create_button(
+        WIDTH // 2 - 115,
+        325,  # подберём по месту
+        230,
+        40,
+        "Изменить имя",
+        BLUE
+    )
+
+    draw_button(change_name_button, font)
 
     pygame.draw.line(
         screen,
         LIGHT_GRAY,
-        (120, 340),
-        (WIDTH - 120, 340),
+        (120, 375),
+        (WIDTH - 120, 375),
         2
     )
 
@@ -1300,14 +1310,14 @@ def draw_profile():
         f"Уровень {level}",
         font,
         BLACK,
-        375
+        390
     )
 
     bar_width = 420
     bar_height = 22
 
     bar_x = WIDTH // 2 - bar_width // 2
-    bar_y = 325
+    bar_y = 430
 
     pygame.draw.rect(
         screen,
@@ -1329,14 +1339,14 @@ def draw_profile():
         f"{current_xp} / {max_xp} XP",
         small_font,
         DARK_GRAY,
-        455
+        470
     )
 
     pygame.draw.line(
         screen,
         LIGHT_GRAY,
-        (120, 500),
-        (WIDTH - 120, 500),
+        (120, 510),
+        (WIDTH - 120, 510),
         2
     )
 
@@ -1368,10 +1378,6 @@ def draw_profile():
         screen.blit(value_surface, (right_x - value_surface.get_width(), y))
 
         y += 45
-
-    #тестовое поле ввода, потом убрать
-    update_text_input(name_input)
-    draw_text_input(name_input)
 
     back_button = create_button(
         40,
@@ -1500,8 +1506,47 @@ def draw_popup():
         draw_button(ok_button, font)
 
 
+
+    elif current_popup == POPUP_INPUT:
+
+        draw_center_text(
+            "Изменение имени",
+            title_font,
+            BLACK,
+            popup_rect.y + 45
+        )
+
+        name_input["rect"].centerx = popup_rect.centerx
+        name_input["rect"].y = popup_rect.y + 120
+
+        update_text_input(name_input)
+        draw_text_input(name_input)
+
+        save_button = create_button(
+            popup_rect.centerx - 165,
+            popup_rect.bottom - 90,
+            180,
+            50,
+            "Сохранить",
+            BLUE
+        )
+
+        cancel_button = create_button(
+            popup_rect.centerx + 35,
+            popup_rect.bottom - 90,
+            120,
+            50,
+            "Отмена",
+            LIGHT_GRAY
+        )
+
+        draw_button(save_button, font)
+        draw_button(cancel_button, font)
+
+
 def handle_popup_click(mouse_pos):
     global current_popup
+    global player_name
 
     if current_popup is None:
         return
@@ -1584,6 +1629,41 @@ def handle_popup_click(mouse_pos):
         "Отмена",
         LIGHT_GRAY
     )
+
+    if current_popup == POPUP_INPUT:
+        handle_text_input_click(name_input, mouse_pos)
+
+        save_button = create_button(
+            popup_rect.centerx - 135,
+            popup_rect.bottom - 90,
+            120,
+            50,
+            "Сохранить",
+            BLUE
+        )
+
+        cancel_button = create_button(
+            popup_rect.centerx + 15,
+            popup_rect.bottom - 90,
+            120,
+            50,
+            "Отмена",
+            LIGHT_GRAY
+        )
+
+        if save_button["rect"].collidepoint(mouse_pos):
+            global player_name
+
+            if name_input["text"].strip():
+                player_name = name_input["text"]
+                save_progress()
+
+            current_popup = None
+
+        elif cancel_button["rect"].collidepoint(mouse_pos):
+            current_popup = None
+
+        return
 
     if easy_button["rect"].collidepoint(mouse_pos):
         current_popup = None
@@ -1708,7 +1788,7 @@ def handle_menu_click(mouse_pos):
 
 
 def handle_profile_click(mouse_pos):
-    global current_screen
+    global current_screen, current_popup
 
     back_button = create_button(
         40,
@@ -1719,6 +1799,15 @@ def handle_profile_click(mouse_pos):
         LIGHT_GRAY
     )
 
+    change_name_button = create_button(
+    WIDTH // 2 - 115,
+    325,
+    230,
+    40,
+        "Изменить имя",
+        BLUE
+    )
+
     handle_text_input_click(
         name_input,
         mouse_pos
@@ -1726,6 +1815,12 @@ def handle_profile_click(mouse_pos):
 
     if back_button["rect"].collidepoint(mouse_pos):
         current_screen = MENU
+
+    if change_name_button["rect"].collidepoint(mouse_pos):
+        name_input["text"] = player_name
+        name_input["active"] = False
+
+        current_popup = POPUP_INPUT
 
 
 def handle_game_click(mouse_pos):
@@ -1973,12 +2068,25 @@ while running:
             elif current_screen == GAME:
                 handle_game_click(mouse_position)
 
+
             elif current_screen == PROFILE:
-                handle_profile_click(mouse_position)
+
+                if current_popup is None:
+                    handle_profile_click(mouse_position)
+
+                else:
+                    handle_popup_click(mouse_position)
 
         if event.type == pygame.KEYDOWN:
 
-            if current_screen == PROFILE:
+            if event.key == pygame.K_ESCAPE and current_popup is not None:
+                current_popup = None
+                continue
+
+            if current_popup == POPUP_INPUT:
+                handle_text_input_keyboard(name_input, event)
+
+            elif current_screen == PROFILE:
                 handle_text_input_keyboard(name_input, event)
 
             if current_screen == GAME:
@@ -1994,6 +2102,8 @@ while running:
 
     elif current_screen == PROFILE:
         draw_profile()
+
+    draw_popup()
 
     pygame.display.flip()
 

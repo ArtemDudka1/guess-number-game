@@ -42,3 +42,5 @@ BET_PANEL_HEIGHT = 365
 
 POPUP_INFO = "info"
 POPUP_DIFFICULTY = "difficulty"
+POPUP_INPUT = "input"
+POPUP_CONFIRM = "confirm"
