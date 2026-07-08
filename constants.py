@@ -17,6 +17,7 @@ LIGHT_GRAY = (225, 225, 225)
 DARK_GRAY = (90, 90, 90)
 YELLOW = (255, 215, 100)
 ORANGE = (255, 180, 80)
+PLACEHOLDER_COLOR = (200, 200, 200)
 
 # Состояния игры
 MENU = "menu"

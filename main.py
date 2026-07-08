@@ -7,6 +7,7 @@ import sys
 from constants import *
 
 pygame.init()
+pygame.key.set_repeat(500, 40)
 
 screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
 pygame.display.set_caption("Угадай число")
@@ -123,6 +124,142 @@ def draw_button(button, font_obj):
     screen.blit(button_text, (text_x, text_y))
 
 
+def draw_text_input(text_input):
+
+    color = BLUE if text_input["active"] else LIGHT_GRAY
+
+    pygame.draw.rect(
+        screen,
+        WHITE,
+        text_input["rect"],
+        border_radius=8
+    )
+
+    pygame.draw.rect(
+        screen,
+        color,
+        text_input["rect"],
+        2,
+        border_radius=8
+    )
+
+    if text_input["text"]:
+
+        text_surface = font.render(
+            text_input["text"],
+            True,
+            BLACK
+        )
+
+    else:
+
+        text_surface = font.render(
+            text_input["placeholder"],
+            True,
+            PLACEHOLDER_COLOR
+        )
+
+    screen.blit(
+        text_surface,
+        (
+            text_input["rect"].x + 12,
+            text_input["rect"].y + 12
+        )
+    )
+
+    if text_input["active"] and text_input["cursor_visible"]:
+        if text_input["text"]:
+
+            cursor_surface = font.render(
+                text_input["text"],
+                True,
+                BLACK
+            )
+
+            cursor_x = (
+                    text_input["rect"].x
+                    + 12
+                    + cursor_surface.get_width()
+            )
+
+        else:
+
+            cursor_x = text_input["rect"].x + 12
+
+        cursor_y = text_input["rect"].y + 10
+
+        pygame.draw.line(
+            screen,
+            BLACK,
+            (cursor_x, cursor_y),
+            (cursor_x, cursor_y + 28),
+            2
+        )
+
+
+def update_text_input(text_input):
+    if not text_input["active"]:
+        text_input["cursor_visible"] = True
+        return
+
+    current_time = pygame.time.get_ticks()
+
+    if current_time - text_input["cursor_timer"] >= 500:
+
+        text_input["cursor_visible"] = not text_input["cursor_visible"]
+        text_input["cursor_timer"] = current_time
+
+
+def handle_text_input_click(text_input, mouse_pos):
+
+    if text_input["rect"].collidepoint(mouse_pos):
+        text_input["active"] = True
+
+    else:
+        text_input["active"] = False
+
+    text_input["cursor_visible"] = True
+    text_input["cursor_timer"] = pygame.time.get_ticks()
+
+
+def handle_text_input_keyboard(text_input, event):
+
+    if not text_input["active"]:
+        return
+
+    if event.key == pygame.K_BACKSPACE:
+        text_input["text"] = text_input["text"][:-1]
+        return
+
+    if event.key == pygame.K_ESCAPE:
+        text_input["active"] = False
+        return
+
+    allowed_symbols = (
+
+        "abcdefghijklmnopqrstuvwxyz"
+
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+        "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
+
+        "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
+
+        "0123456789"
+
+        " _-"
+
+    )
+
+    if event.unicode not in allowed_symbols:
+        return
+
+    if len(text_input["text"]) >= text_input["max_length"]:
+        return
+
+    text_input["text"] += event.unicode
+
+
 def create_button(x, y, width, height, text, color):
     rect = pygame.Rect(x, y, width, height)
 
@@ -131,6 +268,29 @@ def create_button(x, y, width, height, text, color):
         "text": text,
         "color": color
     }
+
+
+def create_text_input(x, y, width, height, placeholder="", max_length=16):
+
+    return {
+        "rect": pygame.Rect(x, y, width, height),
+        "text": "",
+        "placeholder": placeholder,
+        "active": False,
+        "max_length": max_length,
+
+        "cursor_visible": True,
+        "cursor_timer": pygame.time.get_ticks(),
+    }
+
+
+name_input = create_text_input(
+    WIDTH // 2 - 200,
+    700,
+    400,
+    50,
+    "Введите имя"
+)
 
 
 def save_progress():
@@ -1209,6 +1369,10 @@ def draw_profile():
 
         y += 45
 
+    #тестовое поле ввода, потом убрать
+    update_text_input(name_input)
+    draw_text_input(name_input)
+
     back_button = create_button(
         40,
         HEIGHT - 80,
@@ -1555,6 +1719,11 @@ def handle_profile_click(mouse_pos):
         LIGHT_GRAY
     )
 
+    handle_text_input_click(
+        name_input,
+        mouse_pos
+    )
+
     if back_button["rect"].collidepoint(mouse_pos):
         current_screen = MENU
 
@@ -1808,8 +1977,13 @@ while running:
                 handle_profile_click(mouse_position)
 
         if event.type == pygame.KEYDOWN:
+
+            if current_screen == PROFILE:
+                handle_text_input_keyboard(name_input, event)
+
             if current_screen == GAME:
                 handle_custom_bet_typing(event)
+
             handle_debug_keys(event)
 
     if current_screen == MENU:
