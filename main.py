@@ -283,6 +283,354 @@ def create_text_input(x, y, width, height, placeholder="", max_length=16):
     }
 
 
+# ==========================================================
+#                    SCROLL SYSTEM
+# ==========================================================
+#
+# Назначение:
+# Универсальная система прокрутки для любых экранов игры.
+#
+# Используется в:
+# • Профиле
+# • Достижениях
+# • Настройках
+#
+# Возможности:
+# • Вертикальная прокрутка
+# • Ограничение прокрутки
+# • Полоса прокрутки
+# • Поддержка мыши и тачпада
+#
+# ==========================================================
+
+
+def create_scroll_area(x, y, width, height, content_height):
+    """
+    Создает новую область прокрутки.
+
+    Параметры:
+        x, y            - положение области
+        width, height   - размер видимой части
+        content_height  - полная высота содержимого
+
+    Возвращает:
+        dict - объект ScrollArea
+    """
+
+    return {
+
+        # Видимая область
+        "rect": pygame.Rect(x, y, width, height),
+
+        # Область, в которой работает прокрутка
+        "active_rect": pygame.Rect(0, 0, WIDTH, HEIGHT),
+
+        # Смещение содержимого
+        "offset": 0,
+
+        # Высота всего содержимого
+        "content_height": content_height,
+
+        # Скорость прокрутки
+        "scroll_speed": 4,
+
+        # Текущая скорость прокрутки
+        "scroll_velocity": 0.0,
+
+        # Коэффициент затухания
+        "scroll_friction": 0.90,
+
+        # Включена ли прокрутка
+        "enabled": True,
+
+        # ---------- ScrollBar ----------
+
+        # Ширина полосы прокрутки
+        "bar_width": 8,
+
+        # Отступ полосы от края области
+        "bar_padding": 4,
+
+        # Минимальная высота ползунка
+        "min_thumb_height": 40,
+
+        # Расположение полосы прокрутки
+        "bar_x": WIDTH - 25,
+
+        # Верхний отступ контейнера полосы
+        "bar_top": 25,
+
+        # Нижний отступ контейнера полосы
+        "bar_bottom": 25,
+
+        # ---------- ScrollBar Animation ----------
+
+        # Прозрачность полосы
+        "bar_alpha": 0,
+
+        # Таймер видимости
+        "bar_timer": 0,
+
+        # Сколько кадров полоса остается видимой
+        "bar_visible_time": 240,
+
+        # Скорость исчезновения
+        "bar_fade_speed": 1.8,
+    }
+
+
+def clamp_scroll(scroll_area):
+    """
+    Ограничивает прокрутку.
+
+    Не позволяет пользователю прокрутить
+    содержимое выше верхней или ниже нижней
+    границы.
+    """
+
+    # Максимально возможная прокрутка
+    max_scroll = max(
+        0,
+        scroll_area["content_height"] - scroll_area["rect"].height
+    )
+
+    # Ограничиваем значение offset
+    scroll_area["offset"] = max(
+        0,
+        min(scroll_area["offset"], max_scroll)
+    )
+
+
+def handle_scroll(scroll_area, direction):
+    """
+    Изменяет положение прокрутки.
+
+    Параметры:
+        scroll_area - объект ScrollArea
+        direction   - направление прокрутки
+                      (-1 вверх, 1 вниз)
+    """
+
+    if not scroll_area["enabled"]:
+        return
+
+    scroll_area["scroll_velocity"] += (
+            direction *
+            scroll_area["scroll_speed"] *
+            2
+    )
+
+    # Показываем ScrollBar
+    scroll_area["bar_timer"] = scroll_area["bar_visible_time"]
+
+    scroll_area["scroll_velocity"] = max(
+        -20,
+        min(
+            20,
+            scroll_area["scroll_velocity"]
+        )
+    )
+
+
+def update_scroll(scroll_area):
+    """
+    Обновляет плавную прокрутку.
+
+    Выполняется каждый кадр.
+    """
+
+    if abs(scroll_area["scroll_velocity"]) < 0.1:
+        scroll_area["scroll_velocity"] = 0
+
+     # Постепенно уменьшаем скорость
+    scroll_area["scroll_velocity"] *= scroll_area["scroll_friction"]
+
+    # Перемещаем содержимое
+    scroll_area["offset"] += scroll_area["scroll_velocity"]
+
+    # Ограничиваем прокрутку
+    clamp_scroll(scroll_area)
+
+    # Если дошли до верхней границы
+    if scroll_area["offset"] <= 0 and scroll_area["scroll_velocity"] < 0:
+        scroll_area["scroll_velocity"] = 0
+
+    # Если дошли до нижней границы
+    max_offset = max(
+        0,
+        scroll_area["content_height"] - scroll_area["rect"].height
+    )
+
+    if (
+            scroll_area["offset"] >= max_offset
+            and scroll_area["scroll_velocity"] > 0
+    ):
+        scroll_area["scroll_velocity"] = 0
+
+    # ---------- Анимация ScrollBar ----------
+
+    # ---------- Анимация ScrollBar ----------
+
+    if scroll_area["bar_timer"] > 0:
+
+        # Пока пользователь недавно скроллил,
+        # уменьшаем таймер.
+        scroll_area["bar_timer"] -= 1
+
+        # Постепенно увеличиваем прозрачность.
+        scroll_area["bar_alpha"] = min(
+            255,
+            scroll_area["bar_alpha"] + 20
+        )
+
+    else:
+
+        # После окончания таймера
+        # постепенно исчезаем.
+        scroll_area["bar_alpha"] = max(
+            0,
+            scroll_area["bar_alpha"] - scroll_area["bar_fade_speed"]
+        )
+
+
+def handle_scroll_event(scroll_area, event):
+    """
+    Обрабатывает события прокрутки.
+
+    Поддерживает:
+    • колесико мыши
+    • тачпад
+    • клавиатуру (будет добавлена позже)
+    """
+
+    if not scroll_area["enabled"]:
+        return
+
+    # Текущее положение курсора
+    mouse_pos = pygame.mouse.get_pos()
+
+    # Если курсор находится вне рабочей области — ничего не делаем
+    if not scroll_area["active_rect"].collidepoint(mouse_pos):
+        return
+
+    if event.type == pygame.MOUSEWHEEL:
+        handle_scroll(scroll_area, -event.y)
+
+
+def draw_scrollbar(scroll_area):
+    """
+    Отрисовывает полосу прокрутки.
+
+    Полоса автоматически скрывается,
+    если весь контент помещается
+    в видимую область.
+    """
+
+    # Если весь контент помещается,
+    # полоса прокрутки не нужна.
+    if scroll_area["content_height"] <= scroll_area["rect"].height:
+        return
+
+    # Высота контейнера полосы прокрутки
+    track_height = (
+            HEIGHT
+            - scroll_area["bar_top"]
+            - scroll_area["bar_bottom"]
+    )
+
+    thumb_height = (
+            track_height
+            * track_height
+            / scroll_area["content_height"]
+    )
+
+    thumb_height = max(
+        scroll_area["min_thumb_height"],
+        thumb_height
+    )
+
+    scroll_progress = (
+            scroll_area["offset"]
+            /
+            (
+                    scroll_area["content_height"]
+                    - scroll_area["rect"].height
+            )
+    )
+
+    thumb_y = (
+            scroll_area["bar_top"]
+            +
+            scroll_progress
+            *
+            (
+                    track_height
+                    - thumb_height
+            )
+    )
+
+    track_rect = pygame.Rect(
+        scroll_area["bar_x"],
+        scroll_area["bar_top"],
+        scroll_area["bar_width"],
+        track_height
+    )
+
+    thumb_rect = pygame.Rect(
+        track_rect.x,
+        thumb_y,
+        scroll_area["bar_width"],
+        thumb_height
+    )
+
+    # Если ScrollBar полностью скрыт — не рисуем его
+    if scroll_area["bar_alpha"] <= 0:
+        return
+
+    draw_fade_rect(
+        screen,
+        LIGHT_GRAY,
+        track_rect,
+        scroll_area["bar_alpha"],
+        border_radius=5
+    )
+
+    draw_fade_rect(
+        screen,
+        GRAY,
+        thumb_rect,
+        scroll_area["bar_alpha"],
+        border_radius=5
+    )
+
+
+def draw_fade_rect(surface, color, rect, alpha, border_radius=0):
+    """
+    Рисует прямоугольник с прозрачностью.
+
+    Используется для ScrollBar и будущих UI-анимаций.
+    """
+
+    temp_surface = pygame.Surface(
+        (rect.width, rect.height),
+        pygame.SRCALPHA
+    )
+
+    pygame.draw.rect(
+        temp_surface,
+        color,
+        temp_surface.get_rect(),
+        border_radius=border_radius
+    )
+
+    temp_surface.set_alpha(alpha)
+
+    surface.blit(
+        temp_surface,
+        rect.topleft
+    )
+
+
 name_input = create_text_input(
     WIDTH // 2 - 200,
     700,
@@ -1258,9 +1606,22 @@ def draw_menu():
 def draw_profile():
     screen.fill(WHITE)
 
-    draw_center_text("Профиль", title_font, BLACK, 40)
+    # Текущее смещение содержимого профиля
+    scroll_y = profile_scroll["offset"]
 
-    avatar_center = (WIDTH // 2, 185)
+    profile_scroll["active_rect"] = pygame.Rect(
+        0,
+        0,
+        WIDTH,
+        HEIGHT
+    )
+
+    draw_center_text("Профиль", title_font, BLACK, 40 - scroll_y)
+
+    avatar_center = (
+        WIDTH // 2,
+        185 - scroll_y
+    )
 
     pygame.draw.circle(
         screen,
@@ -1281,12 +1642,14 @@ def draw_profile():
         player_name,
         font,
         BLACK,
-        280
+        280 - scroll_y
     )
+
+    draw_scrollbar(profile_scroll)
 
     change_name_button = create_button(
         WIDTH // 2 - 115,
-        325,  # подберём по месту
+        325 - scroll_y,  # подберём по месту
         230,
         40,
         "Изменить имя",
@@ -1298,8 +1661,8 @@ def draw_profile():
     pygame.draw.line(
         screen,
         LIGHT_GRAY,
-        (120, 375),
-        (WIDTH - 120, 375),
+        (120, 375 - scroll_y),
+        (WIDTH - 120, 375 - scroll_y),
         2
     )
 
@@ -1310,14 +1673,14 @@ def draw_profile():
         f"Уровень {level}",
         font,
         BLACK,
-        390
+        390 - scroll_y
     )
 
     bar_width = 420
     bar_height = 22
 
     bar_x = WIDTH // 2 - bar_width // 2
-    bar_y = 430
+    bar_y = 430 - scroll_y
 
     pygame.draw.rect(
         screen,
@@ -1339,14 +1702,14 @@ def draw_profile():
         f"{current_xp} / {max_xp} XP",
         small_font,
         DARK_GRAY,
-        470
+        470 - scroll_y
     )
 
     pygame.draw.line(
         screen,
         LIGHT_GRAY,
-        (120, 510),
-        (WIDTH - 120, 510),
+        (120, 510 - scroll_y),
+        (WIDTH - 120, 510 - scroll_y),
         2
     )
 
@@ -1354,7 +1717,7 @@ def draw_profile():
         "Статистика",
         font,
         BLACK,
-        530
+        530 - scroll_y
     )
 
     left_x = WIDTH // 2 - 220
@@ -1368,7 +1731,7 @@ def draw_profile():
         ("Лучшая серия", best_streak)
     ]
 
-    y = 585
+    y = 585 - scroll_y
 
     for title, value in stats:
         title_surface = font.render(title, True, DARK_GRAY)
@@ -2039,6 +2402,14 @@ def handle_debug_keys(event):
 
 load_progress()
 
+profile_scroll = create_scroll_area(
+    WIDTH - 25,
+    150,
+    8,
+    400,
+    1200
+)
+
 running = True
 
 while running:
@@ -2056,6 +2427,10 @@ while running:
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_position = event.pos
+
+            # Реагируем только на левую кнопку мыши
+            if event.button != 1:
+                continue
 
             if current_screen == MENU:
 
@@ -2093,6 +2468,10 @@ while running:
                 handle_custom_bet_typing(event)
 
             handle_debug_keys(event)
+
+        handle_scroll_event(profile_scroll, event)
+
+    update_scroll(profile_scroll)
 
     if current_screen == MENU:
         draw_menu()
