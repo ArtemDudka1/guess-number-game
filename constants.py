@@ -1,3 +1,7 @@
+import os
+from pathlib import Path
+
+
 # Минимальный размер окна
 MIN_WIDTH = 1250
 MIN_HEIGHT = 900
@@ -18,14 +22,251 @@ DARK_GRAY = (90, 90, 90)
 YELLOW = (255, 215, 100)
 ORANGE = (255, 180, 80)
 PLACEHOLDER_COLOR = (200, 200, 200)
+VERY_LIGHT_GRAY = (245, 245, 245)
+
+# ==========================================================
+#                    PROFILE LAYOUT
+# ==========================================================
+
+PROFILE_HEADER_HEIGHT = 120
+
+PROFILE_CONTENT_WIDTH = 1000
+PROFILE_CONTENT_SIDE_PADDING = 55
+
+PROFILE_NAME_TITLE_GAP = 14
+PROFILE_TITLE_PADDING_X = 16
+PROFILE_TITLE_HEIGHT = 32
+
+PROFILE_STATS_SIDE_PADDING = 100
+PROFILE_STAT_ROW_GAP = 42
+
+PROFILE_SECTION_SPACING = 45
+
+# ==========================================================
+#              ACHIEVEMENT UNLOCK POPUP
+# ==========================================================
+
+ACHIEVEMENT_POPUP_WIDTH = 760
+ACHIEVEMENT_POPUP_MIN_HEIGHT = 430
+ACHIEVEMENT_POPUP_MAX_HEIGHT = 760
+
+ACHIEVEMENT_POPUP_HEADER_HEIGHT = 145
+ACHIEVEMENT_POPUP_FOOTER_HEIGHT = 100
+
+ACHIEVEMENT_POPUP_SIDE_PADDING = 35
+
+ACHIEVEMENT_POPUP_CARD_HEIGHT = 130
+ACHIEVEMENT_POPUP_CARD_GAP = 16
+ACHIEVEMENT_POPUP_TITLE_EXTRA_HEIGHT = 38
+ACHIEVEMENT_POPUP_CARD_RADIUS = 18
+ACHIEVEMENT_POPUP_CARD_PADDING_X = 24
+
+ACHIEVEMENT_POPUP_BORDER_RADIUS = 32
+
+ACHIEVEMENT_POPUP_MAX_VISIBLE_CARDS = 3
+
+ACHIEVEMENT_POPUP_BUTTON_PADDING_X = 28
+ACHIEVEMENT_POPUP_BUTTON_HEIGHT = 50
+ACHIEVEMENT_POPUP_BUTTON_GAP = 20
+ACHIEVEMENT_POPUP_BUTTON_MIN_WIDTH = 170
+
+ACHIEVEMENT_RARITY_NAMES = {
+    "common": "ОБЫЧНОЕ",
+    "rare": "РЕДКОЕ",
+    "epic": "ЭПИЧЕСКОЕ",
+    "legendary": "ЛЕГЕНДАРНОЕ",
+    "mythic": "МИФИЧЕСКОЕ",
+}
+
+# ==========================================================
+#                   DEVELOPER POPUP
+# ==========================================================
+
+DEVELOPER_POPUP_WIDTH = 900
+DEVELOPER_POPUP_HEIGHT = 760
+
+DEVELOPER_POPUP_HEADER_HEIGHT = 115
+DEVELOPER_POPUP_FOOTER_HEIGHT = 100
+
+DEVELOPER_POPUP_SIDE_PADDING = 45
+DEVELOPER_POPUP_BORDER_RADIUS = 30
+
+DEVELOPER_POPUP_BUTTON_WIDTH = 190
+DEVELOPER_POPUP_BUTTON_HEIGHT = 52
+DEVELOPER_POPUP_BUTTON_GAP = 20
+
+MAC_SCANCODE_1 = 30
+MAC_SCANCODE_C = 6
+MAC_SCANCODE_V = 25
+
+
+DEVELOPER_TAG_HEIGHT = 40
+DEVELOPER_TAG_GAP = 10
+DEVELOPER_TAG_ROW_GAP = 10
+DEVELOPER_TAG_PADDING_X = 15
+DEVELOPER_TAG_CLOSE_SIZE = 22
+DEVELOPER_TAG_RADIUS = 12
+DEVELOPER_TAG_MAX_ROWS = 2
+
+DEVELOPER_GRANT_TAG_COLOR = (222, 245, 228)
+DEVELOPER_GRANT_TAG_BORDER_COLOR = GREEN
+DEVELOPER_GRANT_TAG_TEXT_COLOR = (35, 115, 62)
+
+DEVELOPER_RESET_TAG_COLOR = (252, 228, 228)
+DEVELOPER_RESET_TAG_BORDER_COLOR = RED
+DEVELOPER_RESET_TAG_TEXT_COLOR = (155, 45, 45)
+
+# ======================================================
+#                       SCROLL
+# ======================================================
+
+SCROLL_ACCELERATION = 16
+SCROLL_MAX_SPEED = 20
+SCROLL_FRICTION = 0.92
+
+# ---------- Achievement Rarity Colors ----------
+COMMON_COLOR = (170, 170, 170)
+RARE_COLOR = (52, 152, 219)
+EPIC_COLOR = (155, 89, 182)
+LEGENDARY_COLOR = (243, 156, 18)
+MYTHIC_COLOR = (231, 76, 60)
+SECRET_COLOR = (241, 196, 15)
+HIDDEN_CARD_COLOR = (45, 48, 56)
+SECRET_BADGE_COLOR = (212, 175, 55)
+
+RARITY_COLORS = {
+    "common": COMMON_COLOR,
+    "rare": RARE_COLOR,
+    "epic": EPIC_COLOR,
+    "legendary": LEGENDARY_COLOR,
+    "mythic": MYTHIC_COLOR
+}
+
+# ---------- Achievement number ----------
+
+BIG_WIN_POINTS = 5000
+
+# ---------- Achievement UI ----------
+
+CARD_WIDTH = 620
+CARD_HEIGHT = 170
+CARD_RADIUS = 15
+CARD_RARITY_WIDTH = 8
+
+SCREEN_SIDE_MARGIN = 80
+
+PAGE_TITLE_BOTTOM_MARGIN = 35
+
+BADGE_WIDTH = 120
+BADGE_HEIGHT = 30
+BADGE_RADIUS = BADGE_HEIGHT // 2
+
+CONTENT_HEIGHT = 95
+
+ICON_SIZE = 36
+ICON_X = 35
+ICON_Y = 12
+
+TITLE_X = 65
+TITLE_Y = 0
+
+DESCRIPTION_X = 65
+DESCRIPTION_Y = 32
+
+PROGRESS_TEXT_RIGHT = 30
+PROGRESS_TEXT_Y = 2
+
+PROGRESS_BAR_X = 70
+PROGRESS_BAR_Y = 85
+PROGRESS_BAR_RIGHT = 45
+PROGRESS_BAR_HEIGHT = 10
+
+CHECKMARK_SIZE = 10
+CHECKMARK_OFFSET = 12
+CHECKMARK_Y_OFFSET = -2
+
+CARD_SPACING = 40
+
+# ---------- Screen Header ----------
+
+HEADER_HEIGHT = 80
+HEADER_LINE_WIDTH = 2
+
+HEADER_BOTTOM_MARGIN = 50
+
+HEADER_BACKGROUND = WHITE
+
+ACHIEVEMENT_COUNTER_HEIGHT = 38
+ACHIEVEMENT_COUNTER_PADDING_X = 16
+ACHIEVEMENT_COUNTER_GAP = 12
+
+# ---------- Achievement Grid ----------
+
+CARD_COLUMNS = 2
+
+CARD_COLUMN_SPACING = 25
+
+CATEGORY_PADDING = 20
+
+# ---------- Achievement Category Container ----------
+
+CATEGORY_CONTAINER_PADDING = 20
+CATEGORY_CONTAINER_RADIUS = 18
+
+CATEGORY_CONTAINER_COLOR = LIGHT_GRAY
+
+CATEGORY_CONTAINER_TOP_MARGIN = 10
+
+# ---------- Achievement Categories ----------
+CATEGORY_TITLE_HEIGHT = 35
+
+CATEGORY_LINE_WIDTH = 180
+CATEGORY_LINE_HEIGHT = 2
+
+CATEGORY_LINE_MARGIN = 18
+
+CATEGORY_SPACING = 50
+
+CATEGORY_LINE_SIDE_MARGIN = 20
+
+CATEGORY_HEADER_BOTTOM_MARGIN = 20
+
+# ---------- Category Container ----------
+
+CATEGORY_CONTAINER_PADDING_TOP = 30
+CATEGORY_CONTAINER_PADDING_BOTTOM = 30
+
+CATEGORY_COUNTER_AREA_HEIGHT = 42
+
+CATEGORY_CONTAINER_PADDING_LEFT = 40
+CATEGORY_CONTAINER_PADDING_RIGHT = 40
+
+# ---------- Achievement Categories ----------
+
+ACHIEVEMENT_CATEGORIES = {
+    "game": "Игры",
+    "wins": "Победы",
+    "streaks": "Серии побед",
+    "bets": "Ставки",
+    "progress": "Прогресс",
+    "special": "Особые",
+    "hidden": "Скрытые достижения"
+}
 
 # Состояния игры
 MENU = "menu"
 GAME = "game"
 PROFILE = "profile"
+ACHIEVEMENTS_SCREEN = "achievements"
 
-# Файл сохранения
-SAVE_FILE = "save_data.json"
+# Файл сохранения. Переменная окружения используется тестами и отладочными
+# конфигурациями, а обычный запуск всегда хранит прогресс рядом с main.py.
+SAVE_FILE = Path(
+    os.environ.get(
+        "NUMBER_TILES_SAVE_FILE",
+        Path(__file__).resolve().with_name("save_data.json")
+    )
+)
 
 # Общие настройки плиток
 TILE_SIZE = 70
@@ -44,3 +285,5 @@ POPUP_INFO = "info"
 POPUP_DIFFICULTY = "difficulty"
 POPUP_INPUT = "input"
 POPUP_CONFIRM = "confirm"
+POPUP_ACHIEVEMENTS = "achievements_unlocked"
+POPUP_DEVELOPER = "developer"
