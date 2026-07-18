@@ -25,13 +25,133 @@ PLACEHOLDER_COLOR = (200, 200, 200)
 VERY_LIGHT_GRAY = (245, 245, 245)
 
 # ==========================================================
+#                     UI FOUNDATION
+# ==========================================================
+#
+# Общие значения используются новыми UI-компонентами.
+# Специализированные константы экранов ниже остаются алиасами
+# до их поэтапного переноса в рамках v0.16.
+
+# ---------- Palette ----------
+
+UI_COLOR_BACKGROUND = WHITE
+UI_COLOR_SURFACE = LIGHT_GRAY
+UI_COLOR_TEXT = BLACK
+UI_COLOR_TEXT_MUTED = DARK_GRAY
+UI_COLOR_BORDER = LIGHT_GRAY
+UI_COLOR_PRIMARY = BLUE
+UI_COLOR_SUCCESS = GREEN
+UI_COLOR_WARNING = YELLOW
+UI_COLOR_DANGER = RED
+UI_COLOR_DISABLED = GRAY
+
+# ---------- Spacing ----------
+
+UI_SPACE_XS = 8
+UI_SPACE_SM = 12
+UI_SPACE_MD = 16
+UI_SPACE_LG = 20
+UI_SPACE_XL = 24
+UI_SPACE_2XL = 30
+UI_SPACE_3XL = 40
+UI_SPACE_4XL = 55
+
+# ---------- Radii ----------
+
+UI_RADIUS_SM = 8
+UI_RADIUS_MD = 14
+UI_RADIUS_LG = 18
+UI_RADIUS_XL = 20
+UI_RADIUS_2XL = 24
+UI_RADIUS_ROUND = 999
+
+# ---------- Shared sizes ----------
+
+UI_HEADER_HEIGHT = 120
+UI_HEADER_LINE_WIDTH = 2
+UI_CONTENT_MAX_WIDTH = 1000
+UI_CONTENT_SIDE_PADDING = UI_SPACE_4XL
+
+UI_CONTROL_HEIGHT_SM = 36
+UI_CONTROL_HEIGHT_MD = 48
+UI_CONTROL_HEIGHT_LG = 50
+
+# ---------- Interactive states ----------
+
+UI_STATE_NORMAL = "normal"
+UI_STATE_HOVER = "hover"
+UI_STATE_SELECTED = "selected"
+UI_STATE_DISABLED = "disabled"
+UI_STATE_PRESSED = "pressed"
+
+UI_INTERACTIVE_STATES = (
+    UI_STATE_NORMAL,
+    UI_STATE_HOVER,
+    UI_STATE_SELECTED,
+    UI_STATE_DISABLED,
+    UI_STATE_PRESSED,
+)
+
+# Базовый стиль задаёт безопасные значения по умолчанию.
+# Каждый компонент сможет заменить только нужные поля или состояния.
+UI_DEFAULT_INTERACTIVE_STYLE = {
+    "background_color": UI_COLOR_SURFACE,
+    "text_color": UI_COLOR_TEXT,
+    "border_color": UI_COLOR_BORDER,
+    "border_width": 0,
+    "border_radius": UI_RADIUS_XL,
+    "states": {
+        UI_STATE_HOVER: {
+            "border_color": UI_COLOR_TEXT_MUTED,
+            "border_width": 1,
+        },
+        UI_STATE_SELECTED: {
+            "background_color": UI_COLOR_PRIMARY,
+        },
+        UI_STATE_DISABLED: {
+            "background_color": UI_COLOR_DISABLED,
+            "text_color": UI_COLOR_TEXT_MUTED,
+        },
+        UI_STATE_PRESSED: {
+            "border_color": UI_COLOR_TEXT_MUTED,
+            "border_width": 2,
+        },
+    },
+}
+
+UI_BUTTON_STYLE = {
+    "background_color": LIGHT_GRAY,
+    "text_color": BLACK,
+    "border_color": LIGHT_GRAY,
+    "border_width": 0,
+    "border_radius": UI_RADIUS_XL,
+    "states": {
+        UI_STATE_HOVER: {
+            "border_color": DARK_GRAY,
+            "border_width": 2,
+        },
+        UI_STATE_SELECTED: {
+            "background_color": BLUE,
+        },
+        UI_STATE_DISABLED: {
+            "background_color": GRAY,
+            "text_color": DARK_GRAY,
+        },
+        UI_STATE_PRESSED: {
+            "border_color": DARK_GRAY,
+            "border_width": 2,
+        },
+    },
+}
+
+# ==========================================================
 #                    PROFILE LAYOUT
 # ==========================================================
 
-PROFILE_HEADER_HEIGHT = 120
+PROFILE_HEADER_HEIGHT = UI_HEADER_HEIGHT
 
-PROFILE_CONTENT_WIDTH = 1000
-PROFILE_CONTENT_SIDE_PADDING = 55
+PROFILE_CONTENT_WIDTH = UI_CONTENT_MAX_WIDTH
+PROFILE_CONTENT_SIDE_PADDING = UI_CONTENT_SIDE_PADDING
 
 PROFILE_NAME_TITLE_GAP = 14
 PROFILE_TITLE_PADDING_X = 16
@@ -193,8 +313,8 @@ CARD_SPACING = 40
 
 # ---------- Screen Header ----------
 
-HEADER_HEIGHT = 120
-HEADER_LINE_WIDTH = 2
+HEADER_HEIGHT = UI_HEADER_HEIGHT
+HEADER_LINE_WIDTH = UI_HEADER_LINE_WIDTH
 
 HEADER_BOTTOM_MARGIN = 50
 
@@ -283,7 +403,7 @@ COLUMNS = 5
 # ==========================================================
 
 # Фиксированный Header игрового экрана
-GAME_HEADER_HEIGHT = 120
+GAME_HEADER_HEIGHT = UI_HEADER_HEIGHT
 
 # Правая панель ставок
 SIDEBAR_MARGIN = 30
@@ -322,10 +442,10 @@ LEVEL_UP_TOAST_BORDER = (
 #                  SETTINGS SCREEN LAYOUT
 # ==========================================================
 
-SETTINGS_HEADER_HEIGHT = 120
+SETTINGS_HEADER_HEIGHT = UI_HEADER_HEIGHT
 
-SETTINGS_CONTENT_WIDTH = 1000
-SETTINGS_SIDE_PADDING = 55
+SETTINGS_CONTENT_WIDTH = UI_CONTENT_MAX_WIDTH
+SETTINGS_SIDE_PADDING = UI_CONTENT_SIDE_PADDING
 
 SETTINGS_CONTENT_TOP_MARGIN = 40
 SETTINGS_CONTENT_BOTTOM_MARGIN = 60
@@ -339,7 +459,7 @@ SETTINGS_SECTION_PADDING_BOTTOM = 24
 SETTINGS_SECTION_TITLE_HEIGHT = 38
 SETTINGS_ROW_HEIGHT = 48
 
-SETTINGS_SECTION_RADIUS = 18
+SETTINGS_SECTION_RADIUS = UI_RADIUS_LG
 
 SETTINGS_TOGGLE_WIDTH = 72
 SETTINGS_TOGGLE_HEIGHT = 34
