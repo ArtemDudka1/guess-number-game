@@ -2,6 +2,7 @@ import pygame
 import random
 import math
 import json
+import copy
 import os
 import sys
 import subprocess
@@ -11,6 +12,29 @@ from constants import *
 
 pygame.init()
 pygame.key.set_repeat(500, 40)
+
+def initialize_audio_system():
+    """
+    Безопасно подготавливает pygame Mixer.
+
+    Отсутствие аудиоустройства не должно
+    мешать запуску игры.
+    """
+
+    # pygame.init() уже мог успешно
+    # инициализировать Mixer.
+    if pygame.mixer.get_init() is not None:
+        return True
+
+    try:
+        pygame.mixer.init()
+        return True
+
+    except pygame.error:
+        return False
+
+
+audio_available = initialize_audio_system()
 
 DEBUG_MODE = os.environ.get(
     "NUMBER_TILES_DEBUG",
@@ -23,7 +47,583 @@ DEBUG_ACHIEVEMENTS = DEBUG_MODE
 # DEBUG_MODE отдельно управляет только диагностическими логами.
 DEVELOPER_MODE = True
 
+# ==========================================================
+#                    SETTINGS SYSTEM
+# ==========================================================
+
+SETTINGS_SCHEMA_VERSION = 1
+
+DEFAULT_PLAYER_NAME = "Player"
+
+# ==========================================================
+#               ДОПУСТИМЫЕ ЗНАЧЕНИЯ
+# ==========================================================
+
+VALID_START_DIFFICULTIES = (
+    "ask",
+    "easy",
+    "medium",
+    "hard",
+)
+
+VALID_WINDOW_MODES = (
+    "windowed",
+    "fullscreen",
+)
+
+MIN_VOLUME = 0
+MAX_VOLUME = 100
+
+MIN_SAVED_WINDOW_WIDTH = MIN_WIDTH
+MIN_SAVED_WINDOW_HEIGHT = MIN_HEIGHT
+
+MAX_SAVED_WINDOW_WIDTH = 10000
+MAX_SAVED_WINDOW_HEIGHT = 10000
+
+# ==========================================================
+#                 НАСТРОЙКИ ПО УМОЛЧАНИЮ
+# ==========================================================
+
+DEFAULT_SETTINGS = {
+    "schema_version": SETTINGS_SCHEMA_VERSION,
+
+    "game": {
+        "start_difficulty": "ask",
+        "confirm_unfinished_exit": True,
+    },
+
+    "interface": {
+        "window_mode": "windowed",
+
+        "windowed_width": MIN_WIDTH,
+        "windowed_height": MIN_HEIGHT,
+
+        "show_result_details": True,
+        "show_achievement_popups": True,
+        "show_level_up_notification": True,
+        "smooth_scroll": True,
+    },
+
+    "audio": {
+        "enabled": True,
+        "master_volume": 100,
+        "effects_volume": 100,
+        "music_volume": 100,
+    },
+
+    "developer": {
+        "enabled": False,
+    },
+}
+
+# Текущие настройки всегда хранятся отдельно
+# от неизменяемого шаблона DEFAULT_SETTINGS.
+settings = copy.deepcopy(
+    DEFAULT_SETTINGS
+)
+
+
+def get_effect_volume():
+    """
+    Возвращает итоговую громкость эффектов
+    в формате pygame от 0.0 до 1.0.
+    """
+
+    if not settings[
+        "audio"
+    ][
+        "enabled"
+    ]:
+        return 0.0
+
+    master_volume = (
+        settings[
+            "audio"
+        ][
+            "master_volume"
+        ]
+        / 100
+    )
+
+    effects_volume = (
+        settings[
+            "audio"
+        ][
+            "effects_volume"
+        ]
+        / 100
+    )
+
+    return master_volume * effects_volume
+
+
+def get_music_volume():
+    """
+    Возвращает итоговую громкость музыки
+    в формате pygame от 0.0 до 1.0.
+    """
+
+    if not settings[
+        "audio"
+    ][
+        "enabled"
+    ]:
+        return 0.0
+
+    master_volume = (
+        settings[
+            "audio"
+        ][
+            "master_volume"
+        ]
+        / 100
+    )
+
+    music_volume = (
+        settings[
+            "audio"
+        ][
+            "music_volume"
+        ]
+        / 100
+    )
+
+    return master_volume * music_volume
+
+
+def create_default_settings():
+    return copy.deepcopy(
+        DEFAULT_SETTINGS
+    )
+
+def get_valid_bool(
+    data,
+    key,
+    default
+):
+    value = data.get(
+        key,
+        default
+    )
+
+    if isinstance(value, bool):
+        return value
+
+    return default
+
+
+def get_valid_choice(
+    data,
+    key,
+    valid_values,
+    default
+):
+    value = data.get(
+        key,
+        default
+    )
+
+    if value in valid_values:
+        return value
+
+    return default
+
+
+def get_valid_volume(
+    data,
+    key,
+    default
+):
+    value = data.get(
+        key,
+        default
+    )
+
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+    ):
+        return default
+
+    return max(
+        MIN_VOLUME,
+        min(
+            value,
+            MAX_VOLUME
+        )
+    )
+
+
+def get_valid_window_size(
+    data,
+    key,
+    default,
+    minimum,
+    maximum
+):
+    value = data.get(
+        key,
+        default
+    )
+
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+    ):
+        return default
+
+    if not minimum <= value <= maximum:
+        return default
+
+    return value
+
+
+def validate_settings(
+    saved_settings
+):
+    validated = create_default_settings()
+
+    if not isinstance(
+        saved_settings,
+        dict
+    ):
+        return validated
+
+    # ======================================================
+    #                       GAME
+    # ======================================================
+
+    saved_game = saved_settings.get(
+        "game",
+        {}
+    )
+
+    if isinstance(saved_game, dict):
+        validated["game"]["start_difficulty"] = (
+            get_valid_choice(
+                saved_game,
+                "start_difficulty",
+                VALID_START_DIFFICULTIES,
+                DEFAULT_SETTINGS[
+                    "game"
+                ][
+                    "start_difficulty"
+                ]
+            )
+        )
+
+        validated[
+            "game"
+        ][
+            "confirm_unfinished_exit"
+        ] = get_valid_bool(
+            saved_game,
+            "confirm_unfinished_exit",
+            DEFAULT_SETTINGS[
+                "game"
+            ][
+                "confirm_unfinished_exit"
+            ]
+        )
+
+    # ======================================================
+    #                    INTERFACE
+    # ======================================================
+
+    saved_interface = saved_settings.get(
+        "interface",
+        {}
+    )
+
+    if isinstance(saved_interface, dict):
+        validated[
+            "interface"
+        ][
+            "window_mode"
+        ] = get_valid_choice(
+            saved_interface,
+            "window_mode",
+            VALID_WINDOW_MODES,
+            DEFAULT_SETTINGS[
+                "interface"
+            ][
+                "window_mode"
+            ]
+        )
+
+        validated[
+            "interface"
+        ][
+            "windowed_width"
+        ] = get_valid_window_size(
+            saved_interface,
+            "windowed_width",
+            DEFAULT_SETTINGS[
+                "interface"
+            ][
+                "windowed_width"
+            ],
+            MIN_SAVED_WINDOW_WIDTH,
+            MAX_SAVED_WINDOW_WIDTH
+        )
+
+        validated[
+            "interface"
+        ][
+            "windowed_height"
+        ] = get_valid_window_size(
+            saved_interface,
+            "windowed_height",
+            DEFAULT_SETTINGS[
+                "interface"
+            ][
+                "windowed_height"
+            ],
+            MIN_SAVED_WINDOW_HEIGHT,
+            MAX_SAVED_WINDOW_HEIGHT
+        )
+
+        interface_boolean_keys = (
+            "show_result_details",
+            "show_achievement_popups",
+            "show_level_up_notification",
+            "smooth_scroll",
+        )
+
+        for key in interface_boolean_keys:
+            validated[
+                "interface"
+            ][key] = get_valid_bool(
+                saved_interface,
+                key,
+                DEFAULT_SETTINGS[
+                    "interface"
+                ][key]
+            )
+
+    # ======================================================
+    #                       AUDIO
+    # ======================================================
+
+    saved_audio = saved_settings.get(
+        "audio",
+        {}
+    )
+
+    if isinstance(saved_audio, dict):
+        validated[
+            "audio"
+        ][
+            "enabled"
+        ] = get_valid_bool(
+            saved_audio,
+            "enabled",
+            DEFAULT_SETTINGS[
+                "audio"
+            ][
+                "enabled"
+            ]
+        )
+
+        volume_keys = (
+            "master_volume",
+            "effects_volume",
+            "music_volume",
+        )
+
+        for key in volume_keys:
+            validated[
+                "audio"
+            ][key] = get_valid_volume(
+                saved_audio,
+                key,
+                DEFAULT_SETTINGS[
+                    "audio"
+                ][key]
+            )
+
+    # ======================================================
+    #                     DEVELOPER
+    # ======================================================
+
+    saved_developer = saved_settings.get(
+        "developer",
+        {}
+    )
+
+    if isinstance(saved_developer, dict):
+        validated[
+            "developer"
+        ][
+            "enabled"
+        ] = get_valid_bool(
+            saved_developer,
+            "enabled",
+            DEFAULT_SETTINGS[
+                "developer"
+            ][
+                "enabled"
+            ]
+        )
+
+    # Загруженные настройки всегда преобразуются
+    # в актуальную версию схемы.
+    validated["schema_version"] = (
+        SETTINGS_SCHEMA_VERSION
+    )
+
+    return validated
+
+
+def apply_window_mode(
+    mode,
+    remember_current_size=True,
+    save_after=True
+):
+    """
+    Применяет оконный или полноэкранный режим.
+
+    При переходе в fullscreen сохраняет последний
+    нормальный размер обычного окна.
+    """
+
+    global screen
+    global WIDTH
+    global HEIGHT
+
+    if mode not in VALID_WINDOW_MODES:
+        mode = DEFAULT_SETTINGS[
+            "interface"
+        ][
+            "window_mode"
+        ]
+
+    # ======================================================
+    #                   ПОЛНЫЙ ЭКРАН
+    # ======================================================
+
+    if mode == "fullscreen":
+        currently_fullscreen = bool(
+            screen.get_flags()
+            & pygame.FULLSCREEN
+        )
+
+        if (
+            remember_current_size
+            and not currently_fullscreen
+        ):
+            # Запоминаем размер до пересоздания окна.
+            settings[
+                "interface"
+            ][
+                "windowed_width"
+            ] = WIDTH
+
+            settings[
+                "interface"
+            ][
+                "windowed_height"
+            ] = HEIGHT
+
+        screen = pygame.display.set_mode(
+            (
+                0,
+                0
+            ),
+            pygame.FULLSCREEN
+        )
+
+        WIDTH, HEIGHT = (
+            screen.get_size()
+        )
+
+    # ======================================================
+    #                    ОКОННЫЙ РЕЖИМ
+    # ======================================================
+
+    else:
+        windowed_width = settings[
+            "interface"
+        ][
+            "windowed_width"
+        ]
+
+        windowed_height = settings[
+            "interface"
+        ][
+            "windowed_height"
+        ]
+
+        # Повторная защита нужна на случай прямого
+        # изменения settings внутри работающей игры.
+        windowed_width = max(
+            MIN_WIDTH,
+            min(
+                windowed_width,
+                MAX_SAVED_WINDOW_WIDTH
+            )
+        )
+
+        windowed_height = max(
+            MIN_HEIGHT,
+            min(
+                windowed_height,
+                MAX_SAVED_WINDOW_HEIGHT
+            )
+        )
+
+        screen = pygame.display.set_mode(
+            (
+                windowed_width,
+                windowed_height
+            ),
+            pygame.RESIZABLE
+        )
+
+        WIDTH, HEIGHT = (
+            screen.get_size()
+        )
+
+    settings[
+        "interface"
+    ][
+        "window_mode"
+    ] = mode
+
+    # Плитки хранят pygame.Rect, поэтому после изменения
+    # геометрии окна их нужно пересчитать отдельно.
+    update_tile_positions()
+
+    if save_after:
+        save_progress()
+
+
+def apply_saved_window_mode():
+    """
+    Восстанавливает сохранённый режим при запуске.
+
+    Текущий временный размер окна не запоминается,
+    потому что настоящий оконный размер уже загружен из JSON.
+    """
+
+    saved_mode = settings[
+        "interface"
+    ][
+        "window_mode"
+    ]
+
+    apply_window_mode(
+        saved_mode,
+        remember_current_size=False,
+        save_after=False
+    )
+
 command_key_pressed = False
+
+# Resize может создавать много событий подряд.
+# Время последнего изменения используется для одной
+# отложенной записи размера после завершения Resize.
+window_resize_save_deadline = None
 
 developer_queued_changes = None
 
@@ -49,6 +649,10 @@ started_all_in = False
 current_popup = None
 popup_title = ""
 popup_text = ""
+
+# Действие, подтверждение которого сейчас
+# отображает Popup управления данными.
+pending_data_action = None
 
 # ==========================================================
 #                DEVELOPER PANEL STATE
@@ -115,8 +719,15 @@ all_in_bets_count = 0
 total_xp = 0
 last_xp_gained = 0
 
+# Состояние уведомления о новом уровне.
+# Значения должны существовать даже при первом запуске
+# без файла сохранения.
+level_up_message = ""
+level_up_timer = 0
+level_up_alpha = 255
+
 # Профиль
-player_name = "Player"
+player_name = DEFAULT_PLAYER_NAME
 
 # Ставки
 selected_bet = 0
@@ -361,11 +972,22 @@ def print_newly_unlocked_achievements():
 
 def open_achievement_popup():
     """
-    Открывает popup со списком достижений,
-    полученных за последнюю игру.
+    Открывает Popup достижений, если уведомления разрешены.
+
+    Сама выдача достижения и награды выполняется раньше
+    и от этой визуальной настройки не зависит.
     """
+
     global current_popup
     global reset_popup_open
+
+    # Настройка блокирует только визуальный Popup.
+    if not settings[
+        "interface"
+    ][
+        "show_achievement_popups"
+    ]:
+        return
 
     if not newly_unlocked_achievements:
         return
@@ -437,6 +1059,115 @@ def draw_wrapped_text(text, font_obj, color, x, y, max_width, line_gap=4):
     for index, line in enumerate(lines):
         line_surface = font_obj.render(line, True, color)
         screen.blit(line_surface, (x, y + index * (line_height + line_gap)))
+
+
+def fit_text_with_ellipsis(text, font_obj, max_width):
+    """
+    Сокращает текст многоточием, если он не помещается
+    в переданную ширину.
+    """
+
+    if font_obj.size(text)[0] <= max_width:
+        return text
+
+    ellipsis = "..."
+
+    # Убираем символы с конца, пока строка
+    # вместе с многоточием не войдёт в доступную ширину.
+    shortened_text = text
+
+    while (
+        shortened_text
+        and font_obj.size(shortened_text + ellipsis)[0] > max_width
+    ):
+        shortened_text = shortened_text[:-1]
+
+    return shortened_text.rstrip() + ellipsis
+
+
+def draw_wrapped_text_limited(
+    text,
+    font_obj,
+    color,
+    x,
+    y,
+    max_width,
+    max_lines=2,
+    line_gap=4
+):
+    """
+    Рисует текст с переносом строк и ограничивает
+    максимальное количество отображаемых строк.
+    """
+
+    words = text.split()
+    lines = []
+
+    # ======================================================
+    #                  ФОРМИРОВАНИЕ СТРОК
+    # ======================================================
+
+    while words and len(lines) < max_lines:
+        current_line = ""
+
+        while words:
+            test_line = (
+                words[0]
+                if current_line == ""
+                else current_line + " " + words[0]
+            )
+
+            if font_obj.size(test_line)[0] <= max_width:
+                current_line = test_line
+                words.pop(0)
+            else:
+                break
+
+        # Защита для одного слишком длинного слова.
+        if current_line == "" and words:
+            current_line = fit_text_with_ellipsis(
+                words.pop(0),
+                font_obj,
+                max_width
+            )
+
+        # Если это последняя разрешённая строка,
+        # добавляем к ней оставшийся текст и сокращаем.
+        if len(lines) == max_lines - 1 and words:
+            remaining_text = " ".join(
+                [current_line] + words
+            )
+
+            current_line = fit_text_with_ellipsis(
+                remaining_text,
+                font_obj,
+                max_width
+            )
+
+            words.clear()
+
+        lines.append(current_line)
+
+    # ======================================================
+    #                    ОТРИСОВКА СТРОК
+    # ======================================================
+
+    line_height = font_obj.get_height()
+
+    for index, line in enumerate(lines):
+        line_surface = font_obj.render(
+            line,
+            True,
+            color
+        )
+
+        screen.blit(
+            line_surface,
+            (
+                x,
+                y + index * (line_height + line_gap)
+            )
+        )
 
 
 def draw_button(button, font_obj):
@@ -899,93 +1630,184 @@ def clamp_scroll(scroll_area):
     )
 
 
-def handle_scroll(scroll_area, direction):
+def handle_scroll(
+    scroll_area,
+    direction
+):
     """
-    Изменяет положение прокрутки.
+    Принимает одно событие прокрутки.
 
-    Параметры:
-        scroll_area - объект ScrollArea
-        direction   - направление прокрутки
-                      (-1 вверх, 1 вниз)
+    Плавный режим накапливает скорость,
+    а прямой сразу изменяет положение контента.
     """
 
     if not scroll_area["enabled"]:
         return
 
+    smooth_scroll_enabled = settings[
+        "interface"
+    ][
+        "smooth_scroll"
+    ]
+
+    # ======================================================
+    #                    ПРЯМОЙ РЕЖИМ
+    # ======================================================
+
+    if not smooth_scroll_enabled:
+        # В прямом режиме не используем ограничение скорости:
+        # оно делало одиночный шаг слишком маленьким.
+        scroll_area["offset"] += (
+            direction
+            * SCROLL_DIRECT_STEP
+        )
+
+        scroll_area[
+            "scroll_velocity"
+        ] = 0
+
+        clamp_scroll(
+            scroll_area
+        )
+
+        scroll_area["bar_timer"] = (
+            scroll_area[
+                "bar_visible_time"
+            ]
+        )
+
+        return
+
+    # ======================================================
+    #                    ПЛАВНЫЙ РЕЖИМ
+    # ======================================================
+
     scroll_area["scroll_velocity"] += (
-            direction *
-            scroll_area["scroll_speed"] *
-            2
+        direction
+        * scroll_area["scroll_speed"]
+        * 2
     )
 
-    # Показываем ScrollBar
-    scroll_area["bar_timer"] = scroll_area["bar_visible_time"]
+    scroll_area["bar_timer"] = (
+        scroll_area[
+            "bar_visible_time"
+        ]
+    )
 
     scroll_area["scroll_velocity"] = max(
         -SCROLL_MAX_SPEED,
         min(
             SCROLL_MAX_SPEED,
-            scroll_area["scroll_velocity"]
+            scroll_area[
+                "scroll_velocity"
+            ]
         )
     )
 
 
-def update_scroll(scroll_area):
+def update_scroll(
+    scroll_area
+):
     """
-    Обновляет плавную прокрутку.
+    Обновляет положение и анимацию ScrollArea.
 
-    Выполняется каждый кадр.
+    При включённой плавности скорость постепенно затухает.
+    При выключенной применяется один раз и сразу обнуляется.
     """
 
-    if abs(scroll_area["scroll_velocity"]) < 0.1:
-        scroll_area["scroll_velocity"] = 0
+    # ======================================================
+    #                   ОБНОВЛЕНИЕ СКОРОСТИ
+    # ======================================================
 
-     # Постепенно уменьшаем скорость
-    scroll_area["scroll_velocity"] *= scroll_area["scroll_friction"]
+    if abs(
+        scroll_area["scroll_velocity"]
+    ) < 0.1:
+        scroll_area[
+            "scroll_velocity"
+        ] = 0
 
-    # Перемещаем содержимое
-    scroll_area["offset"] += scroll_area["scroll_velocity"]
+    smooth_scroll_enabled = settings[
+        "interface"
+    ][
+        "smooth_scroll"
+    ]
 
-    # Ограничиваем прокрутку
-    clamp_scroll(scroll_area)
+    if smooth_scroll_enabled:
+        scroll_area[
+            "scroll_velocity"
+        ] *= scroll_area[
+            "scroll_friction"
+        ]
 
-    # Если дошли до верхней границы
-    if scroll_area["offset"] <= 0 and scroll_area["scroll_velocity"] < 0:
-        scroll_area["scroll_velocity"] = 0
+    # Скорость сначала применяется к позиции.
+    # В неплавном режиме она будет обнулена сразу после этого.
+    scroll_area[
+        "offset"
+    ] += scroll_area[
+        "scroll_velocity"
+    ]
 
-    # Если дошли до нижней границы
+    if not smooth_scroll_enabled:
+        scroll_area[
+            "scroll_velocity"
+        ] = 0
+
+    clamp_scroll(
+        scroll_area
+    )
+
+    # ======================================================
+    #                 ПРОВЕРКА ГРАНИЦ
+    # ======================================================
+
+    if (
+        scroll_area["offset"] <= 0
+        and scroll_area["scroll_velocity"] < 0
+    ):
+        scroll_area[
+            "scroll_velocity"
+        ] = 0
+
     max_offset = max(
         0,
-        scroll_area["content_height"] - scroll_area["rect"].height
+        (
+            scroll_area["content_height"]
+            - scroll_area["rect"].height
+        )
     )
 
     if (
-            scroll_area["offset"] >= max_offset
-            and scroll_area["scroll_velocity"] > 0
+        scroll_area["offset"] >= max_offset
+        and scroll_area["scroll_velocity"] > 0
     ):
-        scroll_area["scroll_velocity"] = 0
+        scroll_area[
+            "scroll_velocity"
+        ] = 0
 
-    # ---------- Анимация ScrollBar ----------
+    # ======================================================
+    #                  АНИМАЦИЯ SCROLLBAR
+    # ======================================================
 
     if scroll_area["bar_timer"] > 0:
-
-        # Пока пользователь недавно скроллил,
-        # уменьшаем таймер.
         scroll_area["bar_timer"] -= 1
 
-        # Постепенно увеличиваем прозрачность.
         scroll_area["bar_alpha"] = min(
             255,
-            scroll_area["bar_alpha"] + 20
+            (
+                scroll_area["bar_alpha"]
+                + 20
+            )
         )
 
     else:
-
-        # После окончания таймера
-        # постепенно исчезаем.
         scroll_area["bar_alpha"] = max(
             0,
-            scroll_area["bar_alpha"] - scroll_area["bar_fade_speed"]
+            (
+                scroll_area["bar_alpha"]
+                - scroll_area[
+                    "bar_fade_speed"
+                ]
+            )
         )
 
 
@@ -1181,6 +2003,10 @@ def save_progress():
         "player_name": player_name,
         "completed_achievements": completed_achievements,
         "achievement_stats": achievement_stats,
+
+        "settings": copy.deepcopy(
+            settings
+        ),
     }
 
     save_path = Path(SAVE_FILE)
@@ -1278,15 +2104,50 @@ def get_xp_to_next_level():
 
 
 def level_up(new_level):
-    if DEBUG_MODE:
-        print(f"LEVEL UP -> {new_level}")
+    """
+    Подготавливает визуальное уведомление о новом уровне.
+
+    Сам уровень рассчитывается через total_xp,
+    поэтому отключение сообщения не отменяет повышение.
+    """
 
     global level_up_message
     global level_up_timer
     global level_up_alpha
 
-    level_up_message = f"🎉 НОВЫЙ УРОВЕНЬ!\nУровень {new_level}"
-    level_up_timer = 600
+    if DEBUG_MODE:
+        print(
+            f"LEVEL UP -> {new_level}"
+        )
+
+    # ======================================================
+    #                УВЕДОМЛЕНИЕ ОТКЛЮЧЕНО
+    # ======================================================
+
+    if not settings[
+        "interface"
+    ][
+        "show_level_up_notification"
+    ]:
+        # Удаляем возможное старое сообщение,
+        # чтобы оно не появилось после смены настройки.
+        level_up_message = ""
+        level_up_timer = 0
+        level_up_alpha = 255
+        return
+
+    # ======================================================
+    #                УВЕДОМЛЕНИЕ ВКЛЮЧЕНО
+    # ======================================================
+
+    level_up_message = (
+        f"🎉 НОВЫЙ УРОВЕНЬ!\n"
+        f"Уровень {new_level}"
+    )
+
+    level_up_timer = (
+        LEVEL_UP_TOAST_DURATION
+    )
     level_up_alpha = 255
 
 
@@ -1329,6 +2190,7 @@ def load_progress():
     global highest_balance
     global total_attempts_in_wins, tracked_wins_for_attempts
     global games_with_bet, all_in_bets_count
+    global settings
 
     try:
         with Path(SAVE_FILE).open("r", encoding="utf-8") as file:
@@ -1336,6 +2198,12 @@ def load_progress():
 
         if not isinstance(data, dict):
             raise ValueError("Save root must be a JSON object")
+
+        settings = validate_settings(
+            data.get(
+                "settings"
+            )
+        )
 
         score = get_saved_int(data, "score")
         highest_balance = get_saved_int(data, "highest_balance")
@@ -1360,12 +2228,19 @@ def load_progress():
         all_in_bets_count = get_saved_int(data, "all_in_bets_count")
         selected_bet = get_saved_int(data, "selected_bet")
 
-        saved_player_name = data.get("player_name", "Player")
-        player_name = (
-            saved_player_name
-            if isinstance(saved_player_name, str)
-            else "Player"
+        saved_player_name = data.get(
+            "player_name",
+            DEFAULT_PLAYER_NAME
         )
+
+        if (
+                isinstance(saved_player_name, str)
+                and saved_player_name.strip()
+        ):
+            player_name = saved_player_name
+
+        else:
+            player_name = DEFAULT_PLAYER_NAME
 
         completed_achievements = data.get("completed_achievements", {})
         saved_achievement_stats = data.get("achievement_stats", {})
@@ -1397,10 +2272,13 @@ def load_progress():
 
         current_bet = selected_bet
 
+
     except FileNotFoundError:
+        settings = create_default_settings()
         return
 
     except (json.JSONDecodeError, ValueError, TypeError):
+        settings = create_default_settings()
         backup_path = move_invalid_save_aside()
 
         if DEBUG_MODE and backup_path is not None:
@@ -1414,25 +2292,66 @@ def load_progress():
             print("Не удалось загрузить сохранение:", error)
 
 
-def reset_progress():
-    global score, games_played, wins, losses
-    global current_streak, best_streak
-    global selected_bet, current_bet
-    global custom_bet_text, custom_bet_error, custom_bet_active
-    global reset_popup_open
+def reset_progress(
+    save_after=True
+):
+    global score
+    global highest_balance
+
+    global games_played
+    global wins
+    global losses
+
+    global current_streak
+    global best_streak
+
+    global total_attempts_in_wins
+    global tracked_wins_for_attempts
+
+    global games_with_bet
+    global all_in_bets_count
+
     global total_xp
+    global last_xp_gained
+
     global level_up_message
     global level_up_timer
     global level_up_alpha
-    global highest_balance
-    global total_attempts_in_wins, tracked_wins_for_attempts
-    global games_with_bet, all_in_bets_count
+
+    global selected_bet
+    global current_bet
+
+    global custom_bet_text
+    global custom_bet_error
+    global custom_bet_active
+
+    global secret_number
+    global attempts_left
+    global game_over
+    global win
+    global message
+    global tiles
+    global game_started
+
+    global result_line_1
+    global result_line_2
+
+    global balance_before_bet
+    global started_all_in
+
+    global reset_popup_open
+
+    # ======================================================
+    #                  ОСНОВНАЯ СТАТИСТИКА
+    # ======================================================
 
     score = 0
     highest_balance = 0
+
     games_played = 0
     wins = 0
     losses = 0
+
     current_streak = 0
     best_streak = 0
 
@@ -1442,11 +2361,20 @@ def reset_progress():
     games_with_bet = 0
     all_in_bets_count = 0
 
+    # ======================================================
+    #                      XP И УРОВЕНЬ
+    # ======================================================
+
     total_xp = 0
+    last_xp_gained = 0
 
     level_up_message = ""
     level_up_timer = 0
     level_up_alpha = 255
+
+    # ======================================================
+    #                         СТАВКИ
+    # ======================================================
 
     selected_bet = 0
     current_bet = 0
@@ -1455,20 +2383,105 @@ def reset_progress():
     custom_bet_error = ""
     custom_bet_active = False
 
-    reset_popup_open = False
+    balance_before_bet = 0
+    started_all_in = False
+
+    # ======================================================
+    #                   ТЕКУЩАЯ ПАРТИЯ
+    # ======================================================
+
+    secret_number = None
+    attempts_left = None
+
+    game_over = False
+    win = False
+    game_started = False
+
+    message = "Выбери число"
+
+    result_line_1 = ""
+    result_line_2 = ""
+
+    tiles = []
+
+    # ======================================================
+    #                      ДОСТИЖЕНИЯ
+    # ======================================================
 
     for category in ACHIEVEMENTS_DATA.values():
-
         for achievement in category:
             achievement["completed"] = False
 
     for key in achievement_stats:
         achievement_stats[key] = 0
 
+    newly_unlocked_achievements.clear()
+
+    reset_popup_open = False
+
+    if save_after:
+        save_progress()
+
+
+def reset_settings(
+    save_after=True
+):
+    """
+    Возвращает настройки и данные профиля
+    к стандартным значениям.
+    """
+
+    global settings
+    global player_name
+
+    settings = create_default_settings()
+
+    player_name = DEFAULT_PLAYER_NAME
+
+    # Стандартный оконный режим применяется сразу.
+    # Текущий увеличенный размер при этом не запоминается.
+    apply_window_mode(
+        "windowed",
+        remember_current_size=False,
+        save_after=False
+    )
+
+    if save_after:
+        save_progress()
+
+
+def reset_all_data():
+    global current_screen
+    global current_popup
+
+    global popup_title
+    global popup_text
+
+    reset_progress(
+        save_after=False
+    )
+
+    reset_settings(
+        save_after=False
+    )
+
+    current_screen = MENU
+    current_popup = None
+
+    popup_title = ""
+    popup_text = ""
+
     save_progress()
 
 
 def get_menu_buttons():
+    """
+    Формирует актуальный набор кнопок главного меню.
+
+    Developer Panel добавляется только при разрешении
+    соответствующей пользовательской настройки.
+    """
+
     button_width = 320
     button_height = 65
     button_gap = 20
@@ -1480,9 +2493,16 @@ def get_menu_buttons():
         ("Настройки", LIGHT_GRAY),
     ]
 
-    if DEVELOPER_MODE:
+    if settings[
+        "developer"
+    ][
+        "enabled"
+    ]:
         button_data.append(
-            ("Developer-панель", YELLOW)
+            (
+                "Developer-панель",
+                YELLOW
+            )
         )
 
     button_data.append(
@@ -1535,7 +2555,14 @@ def get_menu_buttons():
 
 
 def get_back_to_menu_button():
-    return create_button(30, 30, 120, 45, "Меню", GRAY)
+    return create_button(
+        30,
+        32,
+        150,
+        55,
+        "Меню",
+        LIGHT_GRAY
+    )
 
 
 def get_restart_button():
@@ -1565,12 +2592,41 @@ def get_stats_panel_position():
 
 
 def get_bet_panel_position():
-    stats_x, stats_y, stats_width, stats_height = get_stats_panel_position()
+    panel_x = (
+        WIDTH
+        - PANEL_WIDTH
+        - SIDEBAR_MARGIN
+    )
 
-    panel_x = stats_x + PANEL_WIDTH + PANEL_GAP
-    panel_y = stats_y
+    content_height = (
+        HEIGHT
+        - GAME_HEADER_HEIGHT
+    )
 
-    return panel_x, panel_y, PANEL_WIDTH, BET_PANEL_HEIGHT
+    panel_y = (
+        GAME_HEADER_HEIGHT
+        + (
+            content_height
+            - BET_PANEL_HEIGHT
+        ) // 2
+    )
+
+    minimum_panel_y = (
+        GAME_HEADER_HEIGHT
+        + SIDEBAR_MARGIN
+    )
+
+    panel_y = max(
+        panel_y,
+        minimum_panel_y
+    )
+
+    return (
+        panel_x,
+        panel_y,
+        PANEL_WIDTH,
+        BET_PANEL_HEIGHT
+    )
 
 
 def get_reset_button():
@@ -1641,8 +2697,11 @@ def get_popup_confirm_button():
 
 
 def get_game_area_right():
-    panel_x, panel_y, panel_width, panel_height = get_stats_panel_position()
-    return panel_x - 30
+    panel_x, panel_y, panel_width, panel_height = (
+        get_bet_panel_position()
+    )
+
+    return panel_x - SIDEBAR_MARGIN
 
 
 def get_game_area_center_x():
@@ -1651,8 +2710,90 @@ def get_game_area_center_x():
     return (game_area_left + game_area_right) // 2
 
 
+def should_confirm_unfinished_exit():
+    return (
+        settings[
+            "game"
+        ][
+            "confirm_unfinished_exit"
+        ]
+        and game_started
+        and not game_over
+    )
+
+
+def leave_game_to_menu():
+    global current_screen
+    global current_popup
+
+    global secret_number
+    global attempts_left
+
+    global game_over
+    global win
+    global game_started
+
+    global message
+    global tiles
+
+    global current_bet
+    global balance_before_bet
+    global started_all_in
+
+    global result_line_1
+    global result_line_2
+
+    global custom_bet_active
+    global custom_bet_error
+
+    current_screen = MENU
+    current_popup = None
+
+    secret_number = None
+    attempts_left = None
+
+    game_over = False
+    win = False
+    game_started = False
+
+    message = "Выбери число"
+    tiles = []
+
+    current_bet = selected_bet
+
+    balance_before_bet = 0
+    started_all_in = False
+
+    result_line_1 = ""
+    result_line_2 = ""
+
+    custom_bet_active = False
+    custom_bet_error = ""
+
+    save_progress()
+
+
+def request_leave_game():
+    global current_popup
+
+    if should_confirm_unfinished_exit():
+        current_popup = (
+            POPUP_UNFINISHED_EXIT
+        )
+        return
+
+    leave_game_to_menu()
+
+
 def get_can_change_bet():
     return not game_started or game_over
+
+
+def get_visible_bet():
+    if game_started and not game_over:
+        return current_bet
+
+    return selected_bet
 
 
 def get_bet_buttons():
@@ -1701,19 +2842,38 @@ def get_bet_buttons():
 
 
 def get_custom_bet_input_rect():
-    panel_x, panel_y, panel_width, panel_height = get_bet_panel_position()
+    panel_x, panel_y, panel_width, panel_height = (
+        get_bet_panel_position()
+    )
 
     input_width = 115
     input_height = 40
+
     apply_button_width = 55
     gap_between = 10
 
-    total_width = input_width + gap_between + apply_button_width
+    total_width = (
+        input_width
+        + gap_between
+        + apply_button_width
+    )
 
-    input_x = panel_x + (panel_width - total_width) // 2
-    input_y = panel_y + 312
+    input_x = (
+        panel_x
+        + (
+            panel_width
+            - total_width
+        ) // 2
+    )
 
-    return pygame.Rect(input_x, input_y, input_width, input_height)
+    input_y = panel_y + 332
+
+    return pygame.Rect(
+        input_x,
+        input_y,
+        input_width,
+        input_height
+    )
 
 
 def get_custom_bet_apply_button():
@@ -1727,6 +2887,54 @@ def get_custom_bet_apply_button():
         "OK",
         LIGHT_GRAY
     )
+
+def get_all_in_bet_button():
+    panel_x, panel_y, panel_width, panel_height = (
+        get_bet_panel_position()
+    )
+
+    button_width = 220
+    button_height = 42
+
+    button_x = (
+        panel_x
+        + (
+            panel_width
+            - button_width
+        ) // 2
+    )
+
+    button_y = panel_y + 455
+
+    can_use_all_in = (
+        get_can_change_bet()
+        and score > 0
+    )
+
+    if (
+        can_use_all_in
+        and selected_bet == score
+    ):
+        button_color = ORANGE
+
+    elif can_use_all_in:
+        button_color = WHITE
+
+    else:
+        button_color = GRAY
+
+    button = create_button(
+        button_x,
+        button_y,
+        button_width,
+        button_height,
+        "Поставить всё",
+        button_color
+    )
+
+    button["active"] = can_use_all_in
+
+    return button
 
 
 def get_grid_area_top():
@@ -2338,38 +3546,181 @@ def draw_menu_stats_panel():
 
 
 def draw_level_up_message():
+    """
+    Рисует неблокирующее Toast-уведомление нового уровня.
+
+    Если открыт другой Popup, таймер приостанавливается,
+    чтобы уведомление стало видно после его закрытия.
+    """
+
     global level_up_timer
     global level_up_alpha
 
     if level_up_timer <= 0:
         return
 
+    # Popup достижений рисуется поверх игры.
+    # Приостанавливаем Toast, чтобы он не исчез за затемнением.
+    if current_popup is not None:
+        return
+
+    # ======================================================
+    #                  ОБНОВЛЕНИЕ ТАЙМЕРА
+    # ======================================================
+
     level_up_timer -= 1
 
-    # Первые 180 кадров ничего не исчезает
-    if level_up_timer > 180:
+    if (
+        level_up_timer
+        > LEVEL_UP_TOAST_FADE_DURATION
+    ):
         level_up_alpha = 255
+
     else:
-        level_up_alpha = int(255 * (level_up_timer / 180))
+        level_up_alpha = int(
+            255
+            * level_up_timer
+            / LEVEL_UP_TOAST_FADE_DURATION
+        )
 
-    lines = level_up_message.split("\n")
+    # ======================================================
+    #                  ГЕОМЕТРИЯ TOAST
+    # ======================================================
 
-    y = 40
+    center_x = get_game_area_center_x()
 
-    for line in lines:
-        text = big_font.render(line, True, (255, 215, 0))
-        text.set_alpha(level_up_alpha)
+    toast_x = (
+        center_x
+        - LEVEL_UP_TOAST_WIDTH // 2
+    )
 
-        x = WIDTH // 2 - text.get_width() // 2
+    toast_y = (
+        GAME_HEADER_HEIGHT
+        + LEVEL_UP_TOAST_TOP_MARGIN
+    )
 
-        screen.blit(text, (x, y))
+    toast_rect = pygame.Rect(
+        toast_x,
+        toast_y,
+        LEVEL_UP_TOAST_WIDTH,
+        LEVEL_UP_TOAST_HEIGHT
+    )
 
-        y += 50
+    # Отдельная прозрачная поверхность позволяет
+    # одновременно затухать фону, рамке и тексту.
+    toast_surface = pygame.Surface(
+        (
+            LEVEL_UP_TOAST_WIDTH,
+            LEVEL_UP_TOAST_HEIGHT
+        ),
+        pygame.SRCALPHA
+    )
+
+    pygame.draw.rect(
+        toast_surface,
+        (
+            *LEVEL_UP_TOAST_BACKGROUND,
+            level_up_alpha
+        ),
+        (
+            0,
+            0,
+            LEVEL_UP_TOAST_WIDTH,
+            LEVEL_UP_TOAST_HEIGHT
+        ),
+        border_radius=LEVEL_UP_TOAST_RADIUS
+    )
+
+    pygame.draw.rect(
+        toast_surface,
+        (
+            *LEVEL_UP_TOAST_BORDER,
+            level_up_alpha
+        ),
+        (
+            0,
+            0,
+            LEVEL_UP_TOAST_WIDTH,
+            LEVEL_UP_TOAST_HEIGHT
+        ),
+        3,
+        border_radius=LEVEL_UP_TOAST_RADIUS
+    )
+
+    # ======================================================
+    #                     ТЕКСТ TOAST
+    # ======================================================
+
+    lines = level_up_message.split(
+        "\n"
+    )
+
+    title_text = (
+        lines[0]
+        if lines
+        else "НОВЫЙ УРОВЕНЬ!"
+    )
+
+    level_text = (
+        lines[1]
+        if len(lines) > 1
+        else ""
+    )
+
+    title_surface = font.render(
+        title_text,
+        True,
+        LEVEL_UP_TOAST_BORDER
+    )
+
+    title_surface.set_alpha(
+        level_up_alpha
+    )
+
+    title_rect = title_surface.get_rect(
+        center=(
+            LEVEL_UP_TOAST_WIDTH // 2,
+            34
+        )
+    )
+
+    toast_surface.blit(
+        title_surface,
+        title_rect
+    )
+
+    level_surface = small_font.render(
+        level_text,
+        True,
+        DARK_GRAY
+    )
+
+    level_surface.set_alpha(
+        level_up_alpha
+    )
+
+    level_rect = level_surface.get_rect(
+        center=(
+            LEVEL_UP_TOAST_WIDTH // 2,
+            72
+        )
+    )
+
+    toast_surface.blit(
+        level_surface,
+        level_rect
+    )
+
+    screen.blit(
+        toast_surface,
+        toast_rect
+    )
+
 
 def draw_custom_bet_input():
     panel_x, panel_y, panel_width, panel_height = get_bet_panel_position()
 
-    label_y = panel_y + 278
+    label_y = panel_y + 298
 
     label_text = small_font.render("Своя ставка", True, BLACK)
     label_x = panel_x + panel_width // 2 - label_text.get_width() // 2
@@ -2431,34 +3782,104 @@ def draw_custom_bet_input():
 
 
 def draw_bet_panel():
-    panel_x, panel_y, panel_width, panel_height = get_bet_panel_position()
+    panel_x, panel_y, panel_width, panel_height = (
+        get_bet_panel_position()
+    )
 
-    panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
-    pygame.draw.rect(screen, LIGHT_GRAY, panel_rect, border_radius=14)
+    panel_rect = pygame.Rect(
+        panel_x,
+        panel_y,
+        panel_width,
+        panel_height
+    )
+
+    pygame.draw.rect(
+        screen,
+        LIGHT_GRAY,
+        panel_rect,
+        border_radius=14
+    )
+
+    # ======================================================
+    #                  ЗАГОЛОВОК ПАНЕЛИ
+    # ======================================================
 
     if get_can_change_bet():
-        title_text = small_font.render("Выбор ставки", True, BLACK)
-    else:
-        title_text = small_font.render("Ставка заблокирована", True, DARK_GRAY)
+        title = "Выбор ставки"
+        title_color = BLACK
 
-    title_x = panel_x + panel_width // 2 - title_text.get_width() // 2
+    else:
+        title = "Ставка заблокирована"
+        title_color = DARK_GRAY
+
+    title_text = small_font.render(
+        title,
+        True,
+        title_color
+    )
+
+    title_x = (
+        panel_x
+        + panel_width // 2
+        - title_text.get_width() // 2
+    )
+
     title_y = panel_y + 18
-    screen.blit(title_text, (title_x, title_y))
+
+    screen.blit(
+        title_text,
+        (
+            title_x,
+            title_y
+        )
+    )
+
+    # ======================================================
+    #                ГОТОВЫЕ ВАРИАНТЫ СТАВКИ
+    # ======================================================
 
     bet_buttons = get_bet_buttons()
 
     for button in bet_buttons:
-        draw_button(button, small_font)
+        draw_button(
+            button,
+            small_font
+        )
+
+    # ======================================================
+    #                     РАЗДЕЛИТЕЛЬ
+    # ======================================================
 
     pygame.draw.line(
         screen,
         (190, 190, 190),
-        (panel_x + 18, panel_y + 260),
-        (panel_x + panel_width - 18, panel_y + 260),
+        (
+            panel_x + 18,
+            panel_y + 280
+        ),
+        (
+            panel_x + panel_width - 18,
+            panel_y + 280
+        ),
         2
     )
 
+    # ======================================================
+    #                     СВОЯ СТАВКА
+    # ======================================================
+
     draw_custom_bet_input()
+
+    # ======================================================
+    #                    ПОСТАВИТЬ ВСЁ
+    # ======================================================
+
+    all_in_button = get_all_in_bet_button()
+
+    draw_button(
+        all_in_button,
+        small_font
+    )
 
 
 def draw_reset_popup():
@@ -2485,6 +3906,17 @@ def draw_reset_popup():
     draw_button(confirm_button, small_font)
 
 
+def get_settings_back_button():
+    return create_button(
+        30,
+        32,
+        150,
+        55,
+        "Назад",
+        LIGHT_GRAY
+    )
+
+
 def draw_menu():
     screen.fill(WHITE)
 
@@ -2506,6 +3938,1105 @@ def draw_menu():
 
     for button in get_menu_buttons():
         draw_button(button, font)
+
+
+settings_control_rects = {}
+
+settings_slider_rects = {}
+
+# Ключ ползунка, который пользователь
+# сейчас удерживает мышью.
+active_settings_slider = None
+
+# Исходное значение нужно, чтобы не записывать
+# сохранение при клике без фактического изменения.
+settings_slider_drag_start_value = None
+
+SETTINGS_TOGGLE_PATHS = {
+    "Включить звук": (
+        "audio",
+        "enabled",
+    ),
+
+    "Подтверждение выхода из партии": (
+        "game",
+        "confirm_unfinished_exit",
+    ),
+
+    "Подробный расчёт результата": (
+        "interface",
+        "show_result_details",
+    ),
+
+    "Уведомления о достижениях": (
+        "interface",
+        "show_achievement_popups",
+    ),
+
+    "Уведомления о новом уровне": (
+        "interface",
+        "show_level_up_notification",
+    ),
+
+    "Плавная прокрутка": (
+        "interface",
+        "smooth_scroll",
+    ),
+
+    "Developer Panel": (
+        "developer",
+        "enabled",
+    ),
+}
+
+SETTINGS_OPTION_CONFIGS = {
+    "Запуск игры": {
+        "category": "game",
+        "key": "start_difficulty",
+
+        "options": (
+            (
+                "ask",
+                "Спрашивать"
+            ),
+            (
+                "easy",
+                "Лёгкая"
+            ),
+            (
+                "medium",
+                "Средняя"
+            ),
+            (
+                "hard",
+                "Сложная"
+            ),
+        ),
+    },
+
+    "Режим окна": {
+        "category": "interface",
+        "key": "window_mode",
+
+        "options": (
+            (
+                "windowed",
+                "Оконный"
+            ),
+            (
+                "fullscreen",
+                "Полный экран"
+            ),
+        ),
+    },
+}
+
+
+SETTINGS_SLIDER_PATHS = {
+    "Общая громкость": (
+        "audio",
+        "master_volume",
+    ),
+
+    "Громкость эффектов": (
+        "audio",
+        "effects_volume",
+    ),
+
+    "Громкость музыки": (
+        "audio",
+        "music_volume",
+    ),
+}
+
+
+SETTINGS_DATA_ACTIONS = {
+    "Сбросить прогресс": {
+        "action": "reset_progress",
+        "button_text": "Сбросить",
+        "button_color": YELLOW,
+        "popup_title": "Сбросить прогресс?",
+        "popup_lines": (
+            "Будут удалены статистика, баланс, XP,",
+            "уровень, достижения, титулы и рекорды.",
+            "Настройки и имя пользователя сохранятся.",
+        ),
+        "confirm_text": "Сбросить",
+        "confirm_color": YELLOW,
+    },
+
+    "Сбросить настройки": {
+        "action": "reset_settings",
+        "button_text": "Сбросить",
+        "button_color": ORANGE,
+        "popup_title": "Сбросить настройки?",
+        "popup_lines": (
+            "Будут восстановлены стандартные настройки,",
+            "сброшены имя пользователя и Developer Panel.",
+            "Игровой прогресс и достижения сохранятся.",
+        ),
+        "confirm_text": "Сбросить",
+        "confirm_color": ORANGE,
+    },
+
+    "Удалить все данные": {
+        "action": "reset_all",
+        "button_text": "Удалить всё",
+        "button_color": RED,
+        "popup_title": "Удалить все данные?",
+        "popup_lines": (
+            "Будут безвозвратно удалены весь прогресс,",
+            "достижения, настройки и данные профиля.",
+            "Игра вернётся в состояние первого запуска.",
+        ),
+        "confirm_text": "Удалить всё",
+        "confirm_color": RED,
+    },
+}
+
+
+DIFFICULTY_SETTING_TO_NAME = {
+    "easy": "Лёгкая",
+    "medium": "Средняя",
+    "hard": "Сложная",
+}
+
+
+def draw_settings_toggle(
+    toggle_rect,
+    value,
+    enabled=True
+):
+    if not enabled:
+        track_color = (
+            185,
+            185,
+            185
+        )
+
+    elif value:
+        track_color = GREEN
+
+    else:
+        track_color = GRAY
+
+    pygame.draw.rect(
+        screen,
+        track_color,
+        toggle_rect,
+        border_radius=(
+            SETTINGS_TOGGLE_HEIGHT // 2
+        )
+    )
+
+    if value:
+        knob_x = (
+            toggle_rect.right
+            - SETTINGS_TOGGLE_KNOB_SIZE
+            - 3
+        )
+
+    else:
+        knob_x = toggle_rect.x + 3
+
+    knob_y = (
+        toggle_rect.centery
+        - SETTINGS_TOGGLE_KNOB_SIZE // 2
+    )
+
+    knob_rect = pygame.Rect(
+        knob_x,
+        knob_y,
+        SETTINGS_TOGGLE_KNOB_SIZE,
+        SETTINGS_TOGGLE_KNOB_SIZE
+    )
+
+    pygame.draw.ellipse(
+        screen,
+        WHITE,
+        knob_rect
+    )
+
+    pygame.draw.ellipse(
+        screen,
+        (
+            150,
+            150,
+            150
+        ),
+        knob_rect,
+        1
+    )
+
+    if value:
+        state_text = "Вкл"
+    else:
+        state_text = "Выкл"
+
+    if enabled:
+        state_color = DARK_GRAY
+    else:
+        state_color = GRAY
+
+    state_surface = small_font.render(
+        state_text,
+        True,
+        state_color
+    )
+
+    state_rect = state_surface.get_rect(
+        right=(
+            toggle_rect.x
+            - SETTINGS_TOGGLE_TEXT_GAP
+        ),
+        centery=toggle_rect.centery
+    )
+
+    screen.blit(
+        state_surface,
+        state_rect
+    )
+
+
+def draw_settings_option_selector(
+    row_x,
+    row_y,
+    row_width,
+    setting_key,
+    options,
+    current_value
+):
+    """
+    Рисует набор взаимоисключающих вариантов.
+
+    Ширина каждой кнопки рассчитывается по её тексту,
+    поэтому длинные подписи не выходят за границы.
+    """
+
+    # ======================================================
+    #                    РАСЧЁТ ШИРИНЫ
+    # ======================================================
+
+    option_widths = []
+
+    for option_value, option_label in options:
+        text_width = small_font.size(
+            option_label
+        )[0]
+
+        option_width = max(
+            SETTINGS_OPTION_MIN_WIDTH,
+            (
+                text_width
+                + SETTINGS_OPTION_PADDING_X * 2
+            )
+        )
+
+        option_widths.append(
+            option_width
+        )
+
+    total_width = (
+        sum(option_widths)
+        + (
+            len(options) - 1
+        )
+        * SETTINGS_OPTION_GAP
+    )
+
+    # Вся группа прижимается к правому краю строки.
+    start_x = (
+        row_x
+        + row_width
+        - total_width
+    )
+
+    button_y = (
+        row_y
+        + (
+            SETTINGS_ROW_HEIGHT
+            - SETTINGS_OPTION_HEIGHT
+        ) // 2
+    )
+
+    # ======================================================
+    #                  ОТРИСОВКА ВАРИАНТОВ
+    # ======================================================
+
+    current_x = start_x
+
+    for (
+        option_value,
+        option_label
+    ), option_width in zip(
+        options,
+        option_widths
+    ):
+        # Активный вариант выделяется синим.
+        if option_value == current_value:
+            button_color = BLUE
+        else:
+            button_color = WHITE
+
+        option_button = create_button(
+            current_x,
+            button_y,
+            option_width,
+            SETTINGS_OPTION_HEIGHT,
+            option_label,
+            button_color
+        )
+
+        draw_button(
+            option_button,
+            small_font
+        )
+
+        # Составной ключ отличает варианты
+        # одного и того же параметра.
+        control_id = (
+            "option",
+            setting_key,
+            option_value
+        )
+
+        settings_control_rects[
+            control_id
+        ] = option_button["rect"]
+
+        current_x += (
+            option_width
+            + SETTINGS_OPTION_GAP
+        )
+
+
+def draw_settings_slider(
+    row_x,
+    row_y,
+    row_width,
+    setting_key,
+    current_value,
+    enabled=True
+):
+    """
+    Рисует ползунок настройки в диапазоне 0–100.
+
+    При отключённом звуке Slider остаётся видимым,
+    но становится неактивным.
+    """
+
+    # ======================================================
+    #                    ГЕОМЕТРИЯ SLIDER
+    # ======================================================
+
+    track_right = (
+        row_x
+        + row_width
+        - SETTINGS_SLIDER_PERCENT_WIDTH
+        - SETTINGS_SLIDER_PERCENT_GAP
+    )
+
+    track_left = (
+        track_right
+        - SETTINGS_SLIDER_WIDTH
+    )
+
+    track_center_y = (
+        row_y
+        + SETTINGS_ROW_HEIGHT // 2
+    )
+
+    track_rect = pygame.Rect(
+        track_left,
+        (
+            track_center_y
+            - SETTINGS_SLIDER_TRACK_HEIGHT // 2
+        ),
+        SETTINGS_SLIDER_WIDTH,
+        SETTINGS_SLIDER_TRACK_HEIGHT
+    )
+
+    # Значение дополнительно ограничивается перед отрисовкой,
+    # даже несмотря на валидацию при загрузке.
+    safe_value = max(
+        MIN_VOLUME,
+        min(
+            current_value,
+            MAX_VOLUME
+        )
+    )
+
+    value_ratio = (
+        (safe_value - MIN_VOLUME)
+        / (MAX_VOLUME - MIN_VOLUME)
+    )
+
+    knob_center_x = (
+        track_rect.left
+        + round(
+            track_rect.width * value_ratio
+        )
+    )
+
+    # ======================================================
+    #                  ВИЗУАЛЬНОЕ СОСТОЯНИЕ
+    # ======================================================
+
+    if enabled:
+        track_color = SETTINGS_SLIDER_TRACK_COLOR
+        fill_color = SETTINGS_SLIDER_FILL_COLOR
+        knob_color = SETTINGS_SLIDER_KNOB_COLOR
+        knob_border_color = (
+            SETTINGS_SLIDER_KNOB_BORDER_COLOR
+        )
+        percent_color = DARK_GRAY
+
+    else:
+        track_color = (
+            205,
+            205,
+            205
+        )
+        fill_color = (
+            165,
+            165,
+            165
+        )
+        knob_color = (
+            225,
+            225,
+            225
+        )
+        knob_border_color = (
+            185,
+            185,
+            185
+        )
+        percent_color = GRAY
+
+    # ======================================================
+    #                     ШКАЛА SLIDER
+    # ======================================================
+
+    pygame.draw.rect(
+        screen,
+        track_color,
+        track_rect,
+        border_radius=(
+            SETTINGS_SLIDER_TRACK_HEIGHT // 2
+        )
+    )
+
+    fill_width = max(
+        0,
+        knob_center_x - track_rect.left
+    )
+
+    if fill_width > 0:
+        fill_rect = pygame.Rect(
+            track_rect.left,
+            track_rect.top,
+            fill_width,
+            track_rect.height
+        )
+
+        pygame.draw.rect(
+            screen,
+            fill_color,
+            fill_rect,
+            border_radius=(
+                SETTINGS_SLIDER_TRACK_HEIGHT // 2
+            )
+        )
+
+    # ======================================================
+    #                    БЕГУНОК SLIDER
+    # ======================================================
+
+    knob_rect = pygame.Rect(
+        0,
+        0,
+        SETTINGS_SLIDER_KNOB_SIZE,
+        SETTINGS_SLIDER_KNOB_SIZE
+    )
+
+    knob_rect.center = (
+        knob_center_x,
+        track_center_y
+    )
+
+    pygame.draw.ellipse(
+        screen,
+        knob_color,
+        knob_rect
+    )
+
+    pygame.draw.ellipse(
+        screen,
+        knob_border_color,
+        knob_rect,
+        1
+    )
+
+    # ======================================================
+    #                       ПРОЦЕНТ
+    # ======================================================
+
+    percent_surface = small_font.render(
+        f"{safe_value}%",
+        True,
+        percent_color
+    )
+
+    percent_rect = percent_surface.get_rect(
+        left=(
+            track_right
+            + SETTINGS_SLIDER_PERCENT_GAP
+        ),
+        centery=track_center_y
+    )
+
+    screen.blit(
+        percent_surface,
+        percent_rect
+    )
+
+    # Область клика выше самой тонкой шкалы,
+    # чтобы по Slider было удобно попадать мышью.
+    hit_rect = pygame.Rect(
+        track_rect.left
+        - SETTINGS_SLIDER_KNOB_SIZE // 2,
+        row_y,
+        track_rect.width
+        + SETTINGS_SLIDER_KNOB_SIZE,
+        SETTINGS_ROW_HEIGHT
+    )
+
+    settings_slider_rects[
+        setting_key
+    ] = {
+        "track": track_rect,
+        "hit": hit_rect,
+        "enabled": enabled,
+    }
+
+
+def get_settings_sections():
+    return (
+        (
+            "Игра",
+            (
+                "Запуск игры",
+                "Подтверждение выхода из партии",
+            )
+        ),
+
+        (
+            "Интерфейс",
+            (
+                "Режим окна",
+                "Подробный расчёт результата",
+                "Уведомления о достижениях",
+                "Уведомления о новом уровне",
+                "Плавная прокрутка",
+            )
+        ),
+
+        (
+            "Звук",
+            (
+                "Включить звук",
+                "Общая громкость",
+                "Громкость эффектов",
+                "Громкость музыки",
+            )
+        ),
+
+        (
+            "Данные",
+            (
+                "Сбросить прогресс",
+                "Сбросить настройки",
+                "Удалить все данные",
+            )
+        ),
+
+        (
+            "Для разработчика",
+            (
+                "Developer Panel",
+            )
+        ),
+    )
+
+
+def get_settings_section_height(
+    items_count
+):
+    return (
+        SETTINGS_SECTION_PADDING_TOP
+        + SETTINGS_SECTION_TITLE_HEIGHT
+        + items_count * SETTINGS_ROW_HEIGHT
+        + SETTINGS_SECTION_PADDING_BOTTOM
+    )
+
+
+def draw_settings_section(
+    x,
+    y,
+    width,
+    title,
+    items
+):
+    section_height = (
+        get_settings_section_height(
+            len(items)
+        )
+    )
+
+    section_rect = pygame.Rect(
+        x,
+        y,
+        width,
+        section_height
+    )
+
+    pygame.draw.rect(
+        screen,
+        LIGHT_GRAY,
+        section_rect,
+        border_radius=SETTINGS_SECTION_RADIUS
+    )
+
+    title_surface = font.render(
+        title,
+        True,
+        BLACK
+    )
+
+    screen.blit(
+        title_surface,
+        (
+            x + SETTINGS_SECTION_PADDING_X,
+            y + SETTINGS_SECTION_PADDING_TOP
+        )
+    )
+
+    row_y = (
+        y
+        + SETTINGS_SECTION_PADDING_TOP
+        + SETTINGS_SECTION_TITLE_HEIGHT
+    )
+
+    for index, item in enumerate(items):
+        current_row_y = (
+            row_y
+            + index * SETTINGS_ROW_HEIGHT
+        )
+
+        if index > 0:
+            pygame.draw.line(
+                screen,
+                (200, 200, 200),
+                (
+                    x + SETTINGS_SECTION_PADDING_X,
+                    current_row_y
+                ),
+                (
+                    x
+                    + width
+                    - SETTINGS_SECTION_PADDING_X,
+                    current_row_y
+                ),
+                1
+            )
+
+        item_color = DARK_GRAY
+
+        if (
+            item in SETTINGS_SLIDER_PATHS
+            and not settings[
+                "audio"
+            ][
+                "enabled"
+            ]
+        ):
+            item_color = GRAY
+
+        item_surface = small_font.render(
+            item,
+            True,
+            item_color
+        )
+
+        item_rect = item_surface.get_rect(
+            left=(
+                x
+                + SETTINGS_SECTION_PADDING_X
+            ),
+            centery=(
+                current_row_y
+                + SETTINGS_ROW_HEIGHT // 2
+            )
+        )
+
+        screen.blit(
+            item_surface,
+            item_rect
+        )
+
+        setting_path = (
+            SETTINGS_TOGGLE_PATHS.get(
+                item
+            )
+        )
+
+        if setting_path is not None:
+            category, key = setting_path
+
+            toggle_rect = pygame.Rect(
+                (
+                        x
+                        + width
+                        - SETTINGS_SECTION_PADDING_X
+                        - SETTINGS_TOGGLE_WIDTH
+                ),
+                (
+                        current_row_y
+                        + (
+                                SETTINGS_ROW_HEIGHT
+                                - SETTINGS_TOGGLE_HEIGHT
+                        ) // 2
+                ),
+                SETTINGS_TOGGLE_WIDTH,
+                SETTINGS_TOGGLE_HEIGHT
+            )
+
+            # Полный путь нужен, потому что в разных
+            # категориях могут существовать одинаковые ключи.
+            control_id = (
+                "toggle",
+                category,
+                key
+            )
+
+            settings_control_rects[
+                control_id
+            ] = toggle_rect
+
+            draw_settings_toggle(
+                toggle_rect,
+                settings[
+                    category
+                ][
+                    key
+                ]
+            )
+
+        option_config = (
+            SETTINGS_OPTION_CONFIGS.get(
+                item
+            )
+        )
+
+        if option_config is not None:
+            category = option_config[
+                "category"
+            ]
+
+            key = option_config[
+                "key"
+            ]
+
+            options = option_config[
+                "options"
+            ]
+
+            row_control_x = (
+                x
+                + SETTINGS_SECTION_PADDING_X
+            )
+
+            row_control_width = (
+                width
+                - SETTINGS_SECTION_PADDING_X * 2
+            )
+
+            draw_settings_option_selector(
+                row_control_x,
+                current_row_y,
+                row_control_width,
+                key,
+                options,
+                settings[
+                    category
+                ][
+                    key
+                ]
+            )
+
+        slider_path = (
+            SETTINGS_SLIDER_PATHS.get(
+                item
+            )
+        )
+
+        if slider_path is not None:
+            category, key = slider_path
+
+            row_control_x = (
+                x
+                + SETTINGS_SECTION_PADDING_X
+            )
+
+            row_control_width = (
+                width
+                - SETTINGS_SECTION_PADDING_X * 2
+            )
+
+            draw_settings_slider(
+                row_control_x,
+                current_row_y,
+                row_control_width,
+                key,
+                settings[
+                    category
+                ][
+                    key
+                ],
+                enabled=settings[
+                    "audio"
+                ][
+                    "enabled"
+                ]
+            )
+
+        data_action_config = (
+            SETTINGS_DATA_ACTIONS.get(
+                item
+            )
+        )
+
+        if data_action_config is not None:
+            action = data_action_config[
+                "action"
+            ]
+
+            button_x = (
+                x
+                + width
+                - SETTINGS_SECTION_PADDING_X
+                - SETTINGS_DATA_BUTTON_WIDTH
+            )
+
+            button_y = (
+                current_row_y
+                + (
+                    SETTINGS_ROW_HEIGHT
+                    - SETTINGS_DATA_BUTTON_HEIGHT
+                ) // 2
+            )
+
+            data_button = create_button(
+                button_x,
+                button_y,
+                SETTINGS_DATA_BUTTON_WIDTH,
+                SETTINGS_DATA_BUTTON_HEIGHT,
+                data_action_config[
+                    "button_text"
+                ],
+                data_action_config[
+                    "button_color"
+                ]
+            )
+
+            draw_button(
+                data_button,
+                small_font
+            )
+
+            control_id = (
+                "data_action",
+                action
+            )
+
+            settings_control_rects[
+                control_id
+            ] = data_button["rect"]
+
+    return section_height
+
+
+def draw_settings_screen():
+    """
+    Рисует экран настроек и заново рассчитывает
+    области всех интерактивных элементов.
+    """
+
+    settings_control_rects.clear()
+    settings_slider_rects.clear()
+
+    screen.fill(WHITE)
+
+    # ======================================================
+    #                  ОБЛАСТЬ ПРОКРУТКИ
+    # ======================================================
+
+    settings_viewport = pygame.Rect(
+        0,
+        SETTINGS_HEADER_HEIGHT,
+        WIDTH,
+        HEIGHT - SETTINGS_HEADER_HEIGHT
+    )
+
+    settings_scroll["rect"] = pygame.Rect(
+        WIDTH - 25,
+        settings_viewport.top,
+        8,
+        settings_viewport.height
+    )
+
+    settings_scroll["active_rect"] = (
+        settings_viewport.copy()
+    )
+
+    settings_scroll["bar_x"] = (
+        WIDTH - 25
+    )
+
+    settings_scroll["bar_top"] = (
+        settings_viewport.top + 25
+    )
+
+    settings_scroll["bar_bottom"] = 25
+
+    clamp_scroll(
+        settings_scroll
+    )
+
+    scroll_y = settings_scroll["offset"]
+
+    screen.set_clip(
+        settings_viewport
+    )
+
+    # ======================================================
+    #                    ШИРИНА КОНТЕНТА
+    # ======================================================
+
+    content_width = min(
+        SETTINGS_CONTENT_WIDTH,
+        (
+            WIDTH
+            - SETTINGS_SIDE_PADDING * 2
+        )
+    )
+
+    content_x = (
+        WIDTH // 2
+        - content_width // 2
+    )
+
+    content_y = (
+        SETTINGS_HEADER_HEIGHT
+        + SETTINGS_CONTENT_TOP_MARGIN
+        - scroll_y
+    )
+
+    # ======================================================
+    #                         СЕКЦИИ
+    # ======================================================
+
+    sections = get_settings_sections()
+
+    for title, items in sections:
+        section_height = draw_settings_section(
+            content_x,
+            content_y,
+            content_width,
+            title,
+            items
+        )
+
+        content_y += (
+            section_height
+            + SETTINGS_SECTION_GAP
+        )
+
+    # Последний промежуток между секциями
+    # не входит в настоящую высоту контента.
+    content_y -= SETTINGS_SECTION_GAP
+
+    settings_scroll["content_height"] = max(
+        0,
+        (
+            content_y
+            + scroll_y
+            + SETTINGS_CONTENT_BOTTOM_MARGIN
+            - SETTINGS_HEADER_HEIGHT
+        )
+    )
+
+    clamp_scroll(
+        settings_scroll
+    )
+
+    screen.set_clip(None)
+
+    # ======================================================
+    #                       SCROLLBAR
+    # ======================================================
+
+    draw_scrollbar(
+        settings_scroll
+    )
+
+    # ======================================================
+    #                         HEADER
+    # ======================================================
+
+    header_rect = pygame.Rect(
+        0,
+        0,
+        WIDTH,
+        SETTINGS_HEADER_HEIGHT
+    )
+
+    pygame.draw.rect(
+        screen,
+        WHITE,
+        header_rect
+    )
+
+    pygame.draw.line(
+        screen,
+        LIGHT_GRAY,
+        (
+            0,
+            SETTINGS_HEADER_HEIGHT - 1
+        ),
+        (
+            WIDTH,
+            SETTINGS_HEADER_HEIGHT - 1
+        ),
+        2
+    )
+
+    draw_center_text(
+        "Настройки",
+        title_font,
+        BLACK,
+        35
+    )
+
+    back_button = (
+        get_settings_back_button()
+    )
+
+    draw_button(
+        back_button,
+        font
+    )
 
 
 def draw_profile():
@@ -2535,25 +5066,39 @@ def draw_profile():
         - PROFILE_STATS_SIDE_PADDING
     )
 
-    # Текущее смещение содержимого профиля
-    scroll_y = profile_scroll["offset"]
+    # ======================================================
+    #                  ОБЛАСТЬ ПРОКРУТКИ
+    # ======================================================
 
-    # Скролл работает только ниже фиксированного хедера
-    profile_scroll["active_rect"] = pygame.Rect(
-        0,
-        PROFILE_HEADER_HEIGHT,
-        WIDTH,
-        HEIGHT - PROFILE_HEADER_HEIGHT
-    )
-
-    # Область, внутри которой можно рисовать
-    # прокручиваемое содержимое
     profile_viewport = pygame.Rect(
         0,
         PROFILE_HEADER_HEIGHT,
         WIDTH,
         HEIGHT - PROFILE_HEADER_HEIGHT
     )
+
+    profile_scroll["rect"] = pygame.Rect(
+        WIDTH - 25,
+        profile_viewport.top,
+        8,
+        profile_viewport.height
+    )
+
+    profile_scroll["active_rect"] = (
+        profile_viewport.copy()
+    )
+
+    profile_scroll["bar_x"] = WIDTH - 25
+
+    profile_scroll["bar_top"] = (
+            profile_viewport.top + 25
+    )
+
+    profile_scroll["bar_bottom"] = 25
+
+    clamp_scroll(profile_scroll)
+
+    scroll_y = profile_scroll["offset"]
 
     screen.set_clip(profile_viewport)
 
@@ -3005,6 +5550,18 @@ def draw_profile():
         )
 
         y += PROFILE_STAT_ROW_GAP
+
+    profile_scroll["content_height"] = max(
+        0,
+        (
+            y
+            + scroll_y
+            + 60
+            - PROFILE_HEADER_HEIGHT
+        )
+    )
+
+    clamp_scroll(profile_scroll)
 
     # Прокручиваемое содержимое закончилось
     screen.set_clip(None)
@@ -3864,21 +6421,75 @@ def draw_achievements_screen():
     # ---------- Background ----------
     screen.fill(WHITE)
 
-    # ---------- Content ----------
-    grid_width = (
-            CARD_WIDTH * CARD_COLUMNS
-            + CARD_COLUMN_SPACING * (CARD_COLUMNS - 1)
+    # ======================================================
+    #                  ОБЛАСТЬ ПРОКРУТКИ
+    # ======================================================
+
+    content_viewport = pygame.Rect(
+        0,
+        HEADER_HEIGHT,
+        WIDTH,
+        HEIGHT - HEADER_HEIGHT
     )
 
-    card_x = (WIDTH - grid_width) // 2
+    achievement_scroll["rect"] = pygame.Rect(
+        WIDTH - 25,
+        content_viewport.top,
+        8,
+        content_viewport.height
+    )
 
-    scroll_y = achievement_scroll["offset"]
+    achievement_scroll["active_rect"] = (
+        content_viewport.copy()
+    )
 
-    achievement_scroll["active_rect"] = pygame.Rect(
+    achievement_scroll["bar_x"] = (
+        WIDTH - 25
+    )
+
+    achievement_scroll["bar_top"] = (
+        content_viewport.top + 25
+    )
+
+    achievement_scroll["bar_bottom"] = 25
+
+    clamp_scroll(
+        achievement_scroll
+    )
+
+    # ======================================================
+    #              АДАПТИВНАЯ ШИРИНА КОНТЕНТА
+    # ======================================================
+
+    category_container_x = SCREEN_SIDE_MARGIN
+
+    category_container_width = max(
         0,
+        WIDTH - SCREEN_SIDE_MARGIN * 2
+    )
+
+    grid_width = max(
         0,
-        WIDTH,
-        HEIGHT
+        category_container_width
+        - CATEGORY_CONTAINER_PADDING_LEFT
+        - CATEGORY_CONTAINER_PADDING_RIGHT
+    )
+
+    card_width = max(
+        1,
+        (
+                grid_width
+                - CARD_COLUMN_SPACING * (CARD_COLUMNS - 1)
+        ) // CARD_COLUMNS
+    )
+
+    card_x = (
+            category_container_x
+            + CATEGORY_CONTAINER_PADDING_LEFT
+    )
+
+    scroll_y = (
+        achievement_scroll["offset"]
     )
 
     card_y = (
@@ -3928,11 +6539,9 @@ def draw_achievements_screen():
         )
 
         container_rect = pygame.Rect(
-            card_x - CATEGORY_CONTAINER_PADDING_LEFT,
+            category_container_x,
             category_content_y - CATEGORY_CONTAINER_PADDING_TOP,
-            grid_width
-            + CATEGORY_CONTAINER_PADDING_LEFT
-            + CATEGORY_CONTAINER_PADDING_RIGHT,
+            category_container_width,
             container_height
         )
 
@@ -3967,12 +6576,13 @@ def draw_achievements_screen():
         for achievement in category:
 
             current_x = card_x + (
-                    CARD_WIDTH + CARD_COLUMN_SPACING
+                    card_width + CARD_COLUMN_SPACING
             ) * column
 
             draw_achievement_card(
                 current_x,
                 card_y,
+                card_width,
                 achievement
             )
 
@@ -3988,8 +6598,17 @@ def draw_achievements_screen():
 
         card_y += CATEGORY_SPACING
 
-    achievement_scroll["content_height"] = (
-            card_y + scroll_y
+    achievement_scroll["content_height"] = max(
+        0,
+        (
+                card_y
+                + scroll_y
+                - HEADER_HEIGHT
+        )
+    )
+
+    clamp_scroll(
+        achievement_scroll
     )
 
     draw_scrollbar(achievement_scroll)
@@ -4117,14 +6736,20 @@ def draw_category_header(y, title):
         title_rect
     )
 
-def draw_achievement_card(x, y, achievement):
+def draw_achievement_card(x, y, card_width, achievement):
+    """
+    Рисует адаптивную карточку достижения.
+
+    Ширина карточки рассчитывается экраном достижений,
+    а высота пока остаётся фиксированной.
+    """
 
     # ---------- Container ----------
 
     card_rect = pygame.Rect(
         x,
         y,
-        CARD_WIDTH,
+        card_width,
         CARD_HEIGHT
     )
 
@@ -4257,9 +6882,7 @@ def draw_achievement_card(x, y, achievement):
         ICON_SIZE // 2
     )
 
-    # ---------- Title ----------
-
-    title = achievement["title"]
+    # ---------- Text Colors ----------
 
     title_color = BLACK
     description_color = DARK_GRAY
@@ -4267,20 +6890,6 @@ def draw_achievement_card(x, y, achievement):
     if achievement.get("type") == "hidden":
         title_color = WHITE
         description_color = LIGHT_GRAY
-
-    title_surface = font.render(
-        achievement["title"],
-        True,
-        title_color
-    )
-
-    screen.blit(
-        title_surface,
-        (
-            card_rect.left + TITLE_X,
-            content_y + TITLE_Y
-        )
-    )
 
     # ---------- Progress ----------
 
@@ -4336,18 +6945,63 @@ def draw_achievement_card(x, y, achievement):
         progress_rect
     )
 
+    # ======================================================
+    #              АДАПТИВНЫЙ ЗАГОЛОВОК
+    # ======================================================
+
+    title_x = card_rect.left + TITLE_X
+
+    title_max_width = max(
+        40,
+        progress_rect.left - title_x - 15
+    )
+
+    title_text = achievement["title"]
+    title_font = font
+
+    # Сначала пробуем обычный шрифт заголовка.
+    # Если места недостаточно, используем меньший.
+    if title_font.size(title_text)[0] > title_max_width:
+        title_font = small_font
+
+    title_text = fit_text_with_ellipsis(
+        title_text,
+        title_font,
+        title_max_width
+    )
+
+    title_surface = title_font.render(
+        title_text,
+        True,
+        title_color
+    )
+
+    screen.blit(
+        title_surface,
+        (
+            title_x,
+            content_y + TITLE_Y
+        )
+    )
+
     # ---------- Description ----------
 
-    draw_wrapped_text(
-        achievement["description"],
-        small_font,
-        description_color,
-        x + DESCRIPTION_X,
-        content_y + DESCRIPTION_Y,
-        CARD_WIDTH
+    description_max_width = max(
+        40,
+        card_width
         - DESCRIPTION_X
         - CARD_RARITY_WIDTH
         - 20
+    )
+
+    draw_wrapped_text_limited(
+        achievement["description"],
+        small_font,
+        description_color,
+        card_rect.left + DESCRIPTION_X,
+        content_y + DESCRIPTION_Y,
+        description_max_width,
+        max_lines=3
     )
 
     # ---------- Progress Bar ----------
@@ -4355,11 +7009,13 @@ def draw_achievement_card(x, y, achievement):
     bar_x = card_rect.left + PROGRESS_BAR_X
     bar_y = content_y + PROGRESS_BAR_Y
 
-    bar_width = (
-            CARD_WIDTH
-            - PROGRESS_BAR_X
-            - PROGRESS_BAR_RIGHT
+    bar_width = max(
+        1,
+        card_width
+        - PROGRESS_BAR_X
+        - PROGRESS_BAR_RIGHT
     )
+
     bar_height = PROGRESS_BAR_HEIGHT
 
     progress_percent = min(
@@ -6749,6 +9405,292 @@ def execute_developer_changes(
     return unlocked_after > unlocked_before
 
 
+def get_unfinished_exit_popup_layout():
+    popup_width = 600
+    popup_height = 300
+
+    popup_rect = pygame.Rect(
+        WIDTH // 2 - popup_width // 2,
+        HEIGHT // 2 - popup_height // 2,
+        popup_width,
+        popup_height
+    )
+
+    button_width = 180
+    button_height = 52
+    button_gap = 25
+
+    buttons_width = (
+        button_width * 2
+        + button_gap
+    )
+
+    buttons_x = (
+        popup_rect.centerx
+        - buttons_width // 2
+    )
+
+    buttons_y = (
+        popup_rect.bottom
+        - 82
+    )
+
+    stay_button = create_button(
+        buttons_x,
+        buttons_y,
+        button_width,
+        button_height,
+        "Остаться",
+        LIGHT_GRAY
+    )
+
+    leave_button = create_button(
+        (
+            buttons_x
+            + button_width
+            + button_gap
+        ),
+        buttons_y,
+        button_width,
+        button_height,
+        "Выйти",
+        RED
+    )
+
+    return {
+        "popup_rect": popup_rect,
+        "stay_button": stay_button,
+        "leave_button": leave_button,
+    }
+
+
+def draw_unfinished_exit_popup():
+    layout = (
+        get_unfinished_exit_popup_layout()
+    )
+
+    popup_rect = layout["popup_rect"]
+
+    pygame.draw.rect(
+        screen,
+        WHITE,
+        popup_rect,
+        border_radius=20
+    )
+
+    pygame.draw.rect(
+        screen,
+        DARK_GRAY,
+        popup_rect,
+        2,
+        border_radius=20
+    )
+
+    draw_center_text(
+        "Выйти из партии?",
+        title_font,
+        BLACK,
+        popup_rect.y + 42
+    )
+
+    draw_center_text(
+        "Текущая незавершённая партия будет отменена.",
+        small_font,
+        DARK_GRAY,
+        popup_rect.y + 115
+    )
+
+    draw_center_text(
+        "Статистика, баланс и ставка не изменятся.",
+        small_font,
+        DARK_GRAY,
+        popup_rect.y + 150
+    )
+
+    draw_button(
+        layout["stay_button"],
+        font
+    )
+
+    draw_button(
+        layout["leave_button"],
+        font
+    )
+
+
+def get_data_reset_popup_layout():
+    """
+    Рассчитывает геометрию Popup подтверждения
+    управления данными.
+    """
+
+    popup_rect = pygame.Rect(
+        0,
+        0,
+        DATA_RESET_POPUP_WIDTH,
+        DATA_RESET_POPUP_HEIGHT
+    )
+
+    popup_rect.center = (
+        WIDTH // 2,
+        HEIGHT // 2
+    )
+
+    buttons_width = (
+        DATA_RESET_POPUP_BUTTON_WIDTH * 2
+        + DATA_RESET_POPUP_BUTTON_GAP
+    )
+
+    buttons_x = (
+        popup_rect.centerx
+        - buttons_width // 2
+    )
+
+    buttons_y = (
+        popup_rect.bottom
+        - DATA_RESET_POPUP_BUTTON_HEIGHT
+        - 35
+    )
+
+    cancel_button = create_button(
+        buttons_x,
+        buttons_y,
+        DATA_RESET_POPUP_BUTTON_WIDTH,
+        DATA_RESET_POPUP_BUTTON_HEIGHT,
+        "Отмена",
+        LIGHT_GRAY
+    )
+
+    return {
+        "popup_rect": popup_rect,
+        "cancel_button": cancel_button,
+        "confirm_button_x": (
+            buttons_x
+            + DATA_RESET_POPUP_BUTTON_WIDTH
+            + DATA_RESET_POPUP_BUTTON_GAP
+        ),
+        "buttons_y": buttons_y,
+    }
+
+
+def draw_data_reset_popup():
+    """
+    Рисует подтверждение выбранного действия
+    без выполнения самого сброса.
+    """
+
+    config = (
+        get_pending_data_action_config()
+    )
+
+    if config is None:
+        close_data_reset_popup()
+        return
+
+    layout = (
+        get_data_reset_popup_layout()
+    )
+
+    popup_rect = layout[
+        "popup_rect"
+    ]
+
+    pygame.draw.rect(
+        screen,
+        WHITE,
+        popup_rect,
+        border_radius=DATA_RESET_POPUP_RADIUS
+    )
+
+    pygame.draw.rect(
+        screen,
+        DARK_GRAY,
+        popup_rect,
+        2,
+        border_radius=DATA_RESET_POPUP_RADIUS
+    )
+
+    # ======================================================
+    #                     ТЕКСТ POPUP
+    # ======================================================
+
+    title_surface = title_font.render(
+        config[
+            "popup_title"
+        ],
+        True,
+        BLACK
+    )
+
+    title_rect = title_surface.get_rect(
+        centerx=popup_rect.centerx,
+        top=popup_rect.top + 38
+    )
+
+    screen.blit(
+        title_surface,
+        title_rect
+    )
+
+    for index, line in enumerate(
+        config[
+            "popup_lines"
+        ]
+    ):
+        line_surface = small_font.render(
+            line,
+            True,
+            DARK_GRAY
+        )
+
+        line_rect = line_surface.get_rect(
+            centerx=popup_rect.centerx,
+            top=(
+                popup_rect.top
+                + 110
+                + index * 34
+            )
+        )
+
+        screen.blit(
+            line_surface,
+            line_rect
+        )
+
+    # ======================================================
+    #                    КНОПКИ POPUP
+    # ======================================================
+
+    confirm_button = create_button(
+        layout[
+            "confirm_button_x"
+        ],
+        layout[
+            "buttons_y"
+        ],
+        DATA_RESET_POPUP_BUTTON_WIDTH,
+        DATA_RESET_POPUP_BUTTON_HEIGHT,
+        config[
+            "confirm_text"
+        ],
+        config[
+            "confirm_color"
+        ]
+    )
+
+    draw_button(
+        layout[
+            "cancel_button"
+        ],
+        small_font
+    )
+
+    draw_button(
+        confirm_button,
+        small_font
+    )
+
+
 def draw_popup():
 
     if current_popup is None:
@@ -6775,6 +9717,14 @@ def draw_popup():
 
     if current_popup == POPUP_DEVELOPER:
         draw_developer_popup()
+        return
+
+    if current_popup == POPUP_UNFINISHED_EXIT:
+        draw_unfinished_exit_popup()
+        return
+
+    if current_popup == POPUP_DATA_RESET:
+        draw_data_reset_popup()
         return
 
     popup_width = 500
@@ -7328,6 +10278,121 @@ def handle_developer_popup_click(mouse_pos):
         return
 
 
+def handle_unfinished_exit_popup_click(
+    mouse_pos
+):
+    global current_popup
+
+    layout = (
+        get_unfinished_exit_popup_layout()
+    )
+
+    if layout[
+        "stay_button"
+    ][
+        "rect"
+    ].collidepoint(
+        mouse_pos
+    ):
+        current_popup = None
+        return
+
+    if layout[
+        "leave_button"
+    ][
+        "rect"
+    ].collidepoint(
+        mouse_pos
+    ):
+        leave_game_to_menu()
+        return
+
+
+def handle_data_reset_popup_click(
+    mouse_pos
+):
+    """
+    Обрабатывает кнопки подтверждения управления данными.
+
+    На этапе 20 подтверждение только закрывает Popup.
+    Сами действия подключаются на этапах 21–23.
+    """
+
+    config = (
+        get_pending_data_action_config()
+    )
+
+    if config is None:
+        close_data_reset_popup()
+        return
+
+    layout = (
+        get_data_reset_popup_layout()
+    )
+
+    confirm_button = create_button(
+        layout[
+            "confirm_button_x"
+        ],
+        layout[
+            "buttons_y"
+        ],
+        DATA_RESET_POPUP_BUTTON_WIDTH,
+        DATA_RESET_POPUP_BUTTON_HEIGHT,
+        config[
+            "confirm_text"
+        ],
+        config[
+            "confirm_color"
+        ]
+    )
+
+    if layout[
+        "cancel_button"
+    ][
+        "rect"
+    ].collidepoint(
+        mouse_pos
+    ):
+        close_data_reset_popup()
+        return
+
+    if confirm_button[
+        "rect"
+    ].collidepoint(
+        mouse_pos
+    ):
+        # Сохраняем действие локально, потому что некоторые
+        # функции сброса сами изменяют current_popup.
+        confirmed_action = (
+            pending_data_action
+        )
+
+        # ==================================================
+        #                   СБРОС ПРОГРЕССА
+        # ==================================================
+
+        if confirmed_action == "reset_progress":
+            reset_progress()
+
+        # ==================================================
+        #                  СБРОС НАСТРОЕК
+        # ==================================================
+
+        elif confirmed_action == "reset_settings":
+            reset_settings()
+
+        # ==================================================
+        #                    ПОЛНЫЙ СБРОС
+        # ==================================================
+
+        elif confirmed_action == "reset_all":
+            reset_all_data()
+
+        close_data_reset_popup()
+        return
+
+
 def handle_popup_click(mouse_pos):
     global current_popup
     global player_name
@@ -7343,6 +10408,18 @@ def handle_popup_click(mouse_pos):
 
     if current_popup == POPUP_DEVELOPER:
         handle_developer_popup_click(
+            mouse_pos
+        )
+        return
+
+    if current_popup == POPUP_UNFINISHED_EXIT:
+        handle_unfinished_exit_popup_click(
+            mouse_pos
+        )
+        return
+
+    if current_popup == POPUP_DATA_RESET:
+        handle_data_reset_popup_click(
             mouse_pos
         )
         return
@@ -7477,22 +10554,159 @@ def handle_popup_click(mouse_pos):
         current_popup = None
 
 
+def draw_game_header():
+    header_rect = pygame.Rect(
+        0,
+        0,
+        WIDTH,
+        GAME_HEADER_HEIGHT
+    )
+
+    pygame.draw.rect(
+        screen,
+        WHITE,
+        header_rect
+    )
+
+    # ======================================================
+    #                    КНОПКА «МЕНЮ»
+    # ======================================================
+
+    back_to_menu_button = (
+        get_back_to_menu_button()
+    )
+
+    draw_button(
+        back_to_menu_button,
+        font
+    )
+
+    # ======================================================
+    #                    НАЗВАНИЕ ИГРЫ
+    # ======================================================
+
+    center_x = get_game_area_center_x()
+
+    title_text = title_font.render(
+        "Угадай число",
+        True,
+        BLACK
+    )
+
+    title_rect = title_text.get_rect(
+        center=(
+            center_x,
+            GAME_HEADER_HEIGHT // 2
+        )
+    )
+
+    screen.blit(
+        title_text,
+        title_rect
+    )
+
+    # ======================================================
+    #                    ОБЩИЙ БАЛАНС
+    # ======================================================
+
+    panel_x, panel_y, panel_width, panel_height = (
+        get_bet_panel_position()
+    )
+
+    balance_text = font.render(
+        f"Баланс: {score}",
+        True,
+        BLACK
+    )
+
+    balance_rect = balance_text.get_rect(
+        center=(
+            panel_x + panel_width // 2,
+            43
+        )
+    )
+
+    screen.blit(
+        balance_text,
+        balance_rect
+    )
+
+    visible_bet = get_visible_bet()
+
+    if visible_bet == 0:
+        bet_text_value = "Без ставки"
+    else:
+        bet_text_value = str(visible_bet)
+
+    current_bet_text = small_font.render(
+        f"Текущая ставка: {bet_text_value}",
+        True,
+        DARK_GRAY
+    )
+
+    current_bet_rect = current_bet_text.get_rect(
+        center=(
+            panel_x + panel_width // 2,
+            82
+        )
+    )
+
+    screen.blit(
+        current_bet_text,
+        current_bet_rect
+    )
+
+    # ======================================================
+    #                  НИЖНЯЯ ЛИНИЯ HEADER
+    # ======================================================
+
+    pygame.draw.line(
+        screen,
+        LIGHT_GRAY,
+        (
+            0,
+            GAME_HEADER_HEIGHT - 1
+        ),
+        (
+            WIDTH,
+            GAME_HEADER_HEIGHT - 1
+        ),
+        2
+    )
+
+
 def draw_game():
     screen.fill(WHITE)
 
-    back_to_menu_button = get_back_to_menu_button()
+    # ======================================================
+    #                    ОСНОВНОЙ КОНТЕНТ
+    # ======================================================
 
-    draw_button(back_to_menu_button, small_font)
-    draw_stats_panel()
     draw_bet_panel()
 
     center_x = get_game_area_center_x()
 
-    title_text = big_font.render("Угадай число", True, BLACK)
-    screen.blit(title_text, (center_x - title_text.get_width() // 2, 60))
+    info_text = small_font.render(
+        (
+            f"Сложность: {difficulty_name} | "
+            f"Числа: {min_number}-{max_number}"
+        ),
+        True,
+        DARK_GRAY
+    )
 
-    info_text = small_font.render(f"Сложность: {difficulty_name} | Числа: {min_number}-{max_number}", True, DARK_GRAY)
-    screen.blit(info_text, (center_x - info_text.get_width() // 2, 140))
+    screen.blit(
+        info_text,
+        (
+            center_x
+            - info_text.get_width() // 2,
+            150
+        )
+    )
+
+    # ======================================================
+    #                СООБЩЕНИЕ ИЛИ РЕЗУЛЬТАТ
+    # ======================================================
 
     if game_over:
         if win:
@@ -7500,41 +10714,141 @@ def draw_game():
         else:
             result_color = RED
 
-        result_text_1 = font.render(result_line_1, True, result_color)
-        screen.blit(result_text_1, (center_x - result_text_1.get_width() // 2, 185))
+        result_text_1 = font.render(
+            result_line_1,
+            True,
+            result_color
+        )
 
-        result_text_2 = small_font.render(result_line_2, True, DARK_GRAY)
-        screen.blit(result_text_2, (center_x - result_text_2.get_width() // 2, 235))
+        screen.blit(
+            result_text_1,
+            (
+                center_x
+                - result_text_1.get_width() // 2,
+                195
+            )
+        )
+
+        result_text_2 = small_font.render(
+            result_line_2,
+            True,
+            DARK_GRAY
+        )
+
+        screen.blit(
+            result_text_2,
+            (
+                center_x
+                - result_text_2.get_width() // 2,
+                245
+            )
+        )
+
     else:
-        message_text = font.render(message, True, BLACK)
-        screen.blit(message_text, (center_x - message_text.get_width() // 2, 190))
+        message_text = font.render(
+            message,
+            True,
+            BLACK
+        )
 
-        attempts_text = small_font.render(f"Попытки: {attempts_left}/{max_attempts}", True, DARK_GRAY)
-        screen.blit(attempts_text, (center_x - attempts_text.get_width() // 2, 245))
+        screen.blit(
+            message_text,
+            (
+                center_x
+                - message_text.get_width() // 2,
+                195
+            )
+        )
+
+        attempts_text = small_font.render(
+            (
+                f"Попытки: "
+                f"{attempts_left}/{max_attempts}"
+            ),
+            True,
+            DARK_GRAY
+        )
+
+        screen.blit(
+            attempts_text,
+            (
+                center_x
+                - attempts_text.get_width() // 2,
+                250
+            )
+        )
+
+    # ======================================================
+    #                       ПЛИТКИ
+    # ======================================================
 
     for tile in tiles:
         rect = tile["rect"]
         number = tile["number"]
         color = tile["color"]
 
-        pygame.draw.rect(screen, color, rect, border_radius=12)
+        pygame.draw.rect(
+            screen,
+            color,
+            rect,
+            border_radius=12
+        )
 
-        number_text = small_font.render(str(number), True, BLACK)
-        text_x = rect.centerx - number_text.get_width() // 2
-        text_y = rect.centery - number_text.get_height() // 2
+        number_text = small_font.render(
+            str(number),
+            True,
+            BLACK
+        )
 
-        screen.blit(number_text, (text_x, text_y))
+        text_x = (
+            rect.centerx
+            - number_text.get_width() // 2
+        )
+
+        text_y = (
+            rect.centery
+            - number_text.get_height() // 2
+        )
+
+        screen.blit(
+            number_text,
+            (
+                text_x,
+                text_y
+            )
+        )
+
+    # ======================================================
+    #                  ЗАВЕРШЁННАЯ ПАРТИЯ
+    # ======================================================
 
     if game_over:
-        bottom_text = small_font.render("Выбери ставку и нажми «Заново»", True, DARK_GRAY)
-        screen.blit(bottom_text, (center_x - bottom_text.get_width() // 2, HEIGHT - 140))
+        bottom_text = small_font.render(
+            "Выбери ставку и нажми «Заново»",
+            True,
+            DARK_GRAY
+        )
+
+        screen.blit(
+            bottom_text,
+            (
+                center_x
+                - bottom_text.get_width() // 2,
+                HEIGHT - 140
+            )
+        )
 
         restart_button = get_restart_button()
-        draw_button(restart_button, small_font)
 
-    if reset_popup_open:
-        draw_reset_popup()
+        draw_button(
+            restart_button,
+            small_font
+        )
 
+    # Header закрывает верхнюю границу игрового контента.
+    draw_game_header()
+
+    # Toast рисуется после Header и всегда остаётся видимым.
     draw_level_up_message()
 
 
@@ -7553,6 +10867,45 @@ def handle_reset_popup_click(mouse_pos):
         return
 
 
+def start_game_from_settings():
+    """
+    Запускает игру согласно сохранённому режиму сложности.
+
+    Режим ask сохраняет старое поведение с Popup,
+    а конкретная сложность начинает игру сразу.
+    """
+
+    global current_popup
+
+    start_difficulty = settings[
+        "game"
+    ][
+        "start_difficulty"
+    ]
+
+    # ======================================================
+    #                 ВСЕГДА СПРАШИВАТЬ
+    # ======================================================
+
+    if start_difficulty == "ask":
+        current_popup = POPUP_DIFFICULTY
+        return
+
+    # ======================================================
+    #                  ПРЯМОЙ ЗАПУСК
+    # ======================================================
+
+    difficulty_name_value = (
+        DIFFICULTY_SETTING_TO_NAME[
+            start_difficulty
+        ]
+    )
+
+    set_difficulty(
+        difficulty_name_value
+    )
+
+
 def handle_menu_click(mouse_pos):
     global current_popup, popup_title, popup_text, current_screen
 
@@ -7561,7 +10914,8 @@ def handle_menu_click(mouse_pos):
         if button["rect"].collidepoint(mouse_pos):
 
             if button["text"] == "Играть":
-                current_popup = POPUP_DIFFICULTY
+                start_game_from_settings()
+                return
 
 
             elif button["text"] == "Профиль":
@@ -7573,10 +10927,10 @@ def handle_menu_click(mouse_pos):
                 current_screen = ACHIEVEMENTS_SCREEN
                 return
 
+
             elif button["text"] == "Настройки":
-                current_popup = POPUP_INFO
-                popup_title = "Настройки"
-                popup_text = "Раздел находится\nв разработке."
+                current_screen = SETTINGS_SCREEN
+                return
 
             elif button["text"] == "Developer-панель":
                 open_developer_popup()
@@ -7585,6 +10939,391 @@ def handle_menu_click(mouse_pos):
             elif button["text"] == "Выход":
                 pygame.quit()
                 sys.exit()
+
+
+def set_settings_slider_value(
+    setting_key,
+    mouse_x
+):
+    """
+    Переводит координату мыши в значение Slider
+    и сразу обновляет настройку громкости в памяти.
+    """
+
+    slider_layout = settings_slider_rects.get(
+        setting_key
+    )
+
+    if slider_layout is None:
+        return
+
+    track_rect = slider_layout["track"]
+
+    mouse_x = max(
+        track_rect.left,
+        min(
+            mouse_x,
+            track_rect.right
+        )
+    )
+
+    value_ratio = (
+        (mouse_x - track_rect.left)
+        / track_rect.width
+    )
+
+    new_value = round(
+        MIN_VOLUME
+        + value_ratio
+        * (MAX_VOLUME - MIN_VOLUME)
+    )
+
+    settings[
+        "audio"
+    ][
+        setting_key
+    ] = new_value
+
+
+def begin_settings_slider_drag(
+    mouse_pos
+):
+    """
+    Начинает перетаскивание Slider, если нажатие
+    произошло внутри его расширенной области.
+    """
+
+    global active_settings_slider
+    global settings_slider_drag_start_value
+
+    for item, setting_path in (
+        SETTINGS_SLIDER_PATHS.items()
+    ):
+        category, key = setting_path
+
+        slider_layout = settings_slider_rects.get(
+            key
+        )
+
+        if (
+                slider_layout is not None
+                and slider_layout["enabled"]
+                and slider_layout["hit"].collidepoint(
+            mouse_pos
+        )
+        ):
+            active_settings_slider = key
+
+            settings_slider_drag_start_value = (
+                settings[
+                    category
+                ][
+                    key
+                ]
+            )
+
+            # Нажатие на любое место шкалы
+            # сразу переносит туда бегунок.
+            set_settings_slider_value(
+                key,
+                mouse_pos[0]
+            )
+
+            return True
+
+    return False
+
+
+def update_settings_slider_drag(
+    mouse_pos
+):
+    """
+    Обновляет активный Slider во время
+    движения мыши с зажатой кнопкой.
+    """
+
+    if active_settings_slider is None:
+        return
+
+    set_settings_slider_value(
+        active_settings_slider,
+        mouse_pos[0]
+    )
+
+
+def finish_settings_slider_drag():
+    """
+    Завершает перетаскивание и сохраняет новое
+    значение один раз после отпускания мыши.
+    """
+
+    global active_settings_slider
+    global settings_slider_drag_start_value
+
+    if active_settings_slider is None:
+        return
+
+    current_value = settings[
+        "audio"
+    ][
+        active_settings_slider
+    ]
+
+    if (
+        current_value
+        != settings_slider_drag_start_value
+    ):
+        save_progress()
+
+    active_settings_slider = None
+    settings_slider_drag_start_value = None
+
+
+def open_data_reset_popup(
+    action
+):
+    """
+    Открывает подтверждение выбранного
+    действия управления данными.
+    """
+
+    global current_popup
+    global pending_data_action
+
+    valid_actions = {
+        config["action"]
+        for config in SETTINGS_DATA_ACTIONS.values()
+    }
+
+    if action not in valid_actions:
+        return
+
+    pending_data_action = action
+    current_popup = POPUP_DATA_RESET
+
+
+def close_data_reset_popup():
+    """
+    Закрывает Popup управления данными
+    и очищает выбранное действие.
+    """
+
+    global current_popup
+    global pending_data_action
+
+    current_popup = None
+    pending_data_action = None
+
+
+def get_pending_data_action_config():
+    """
+    Возвращает описание выбранного действия
+    для отрисовки и обработки Popup.
+    """
+
+    for config in SETTINGS_DATA_ACTIONS.values():
+        if config[
+            "action"
+        ] == pending_data_action:
+            return config
+
+    return None
+
+
+def handle_settings_click(
+    mouse_pos
+):
+    """
+    Обрабатывает кнопку возврата и интерактивные элементы настроек.
+
+    Клики по прокрученным за пределы видимой области
+    элементам блокируются через settings_viewport.
+    """
+
+    global current_screen
+
+    # ======================================================
+    #                         НАЗАД
+    # ======================================================
+
+    back_button = (
+        get_settings_back_button()
+    )
+
+    if back_button["rect"].collidepoint(
+        mouse_pos
+    ):
+        current_screen = MENU
+        return
+
+    # ======================================================
+    #                    ВИДИМАЯ ОБЛАСТЬ
+    # ======================================================
+
+    settings_viewport = pygame.Rect(
+        0,
+        SETTINGS_HEADER_HEIGHT,
+        WIDTH,
+        HEIGHT - SETTINGS_HEADER_HEIGHT
+    )
+
+    if not settings_viewport.collidepoint(
+        mouse_pos
+    ):
+        return
+
+    # ======================================================
+    #                 УПРАВЛЕНИЕ ДАННЫМИ
+    # ======================================================
+
+    for config in SETTINGS_DATA_ACTIONS.values():
+        action = config[
+            "action"
+        ]
+
+        control_id = (
+            "data_action",
+            action
+        )
+
+        button_rect = (
+            settings_control_rects.get(
+                control_id
+            )
+        )
+
+        if (
+            button_rect is not None
+            and button_rect.collidepoint(
+                mouse_pos
+            )
+        ):
+            open_data_reset_popup(
+                action
+            )
+            return
+
+    # ======================================================
+    #                         SLIDER
+    # ======================================================
+
+    if begin_settings_slider_drag(
+        mouse_pos
+    ):
+        return
+
+    # ======================================================
+    #                         TOGGLE
+    # ======================================================
+
+    for setting_path in (
+            SETTINGS_TOGGLE_PATHS.values()
+    ):
+        category, key = setting_path
+
+        control_id = (
+            "toggle",
+            category,
+            key
+        )
+
+        toggle_rect = (
+            settings_control_rects.get(
+                control_id
+            )
+        )
+
+        if (
+            toggle_rect is not None
+            and toggle_rect.collidepoint(
+                mouse_pos
+            )
+        ):
+            settings[
+                category
+            ][
+                key
+            ] = not settings[
+                category
+            ][
+                key
+            ]
+
+            save_progress()
+            return
+
+    # ======================================================
+    #                    OPTION SELECTOR
+    # ======================================================
+
+    for option_config in (
+        SETTINGS_OPTION_CONFIGS.values()
+    ):
+        category = option_config[
+            "category"
+        ]
+
+        key = option_config[
+            "key"
+        ]
+
+        for option_value, option_label in (
+            option_config["options"]
+        ):
+            control_id = (
+                "option",
+                key,
+                option_value
+            )
+
+            option_rect = (
+                settings_control_rects.get(
+                    control_id
+                )
+            )
+
+            if (
+                    option_rect is not None
+                    and option_rect.collidepoint(
+                mouse_pos
+            )
+            ):
+                current_value = settings[
+                    category
+                ][
+                    key
+                ]
+
+                # Повторный клик по уже активному
+                # варианту ничего не пересоздаёт.
+                if option_value == current_value:
+                    return
+
+                # ==================================================
+                #                  РЕЖИМ ОКНА
+                # ==================================================
+
+                if (
+                        category == "interface"
+                        and key == "window_mode"
+                ):
+                    apply_window_mode(
+                        option_value
+                    )
+                    return
+
+                # ==================================================
+                #               ОСТАЛЬНЫЕ OPTION
+                # ==================================================
+
+                settings[
+                    category
+                ][
+                    key
+                ] = option_value
+
+                save_progress()
+                return
 
 
 def handle_profile_click(mouse_pos):
@@ -7623,33 +11362,101 @@ def handle_profile_click(mouse_pos):
         current_popup = POPUP_INPUT
 
 
+def get_result_details_text(
+    result,
+    player_won
+):
+    """
+    Формирует вторую строку результата согласно настройкам.
+
+    Подробный режим показывает составляющие расчёта,
+    компактный — только полученный XP и текущий баланс.
+    """
+
+    show_details = settings[
+        "interface"
+    ][
+        "show_result_details"
+    ]
+
+    # ======================================================
+    #                  КОМПАКТНЫЙ РЕЖИМ
+    # ======================================================
+
+    if not show_details:
+        return (
+            f"XP: +{last_xp_gained} | "
+            f"Баланс: {score}"
+        )
+
+    # ======================================================
+    #                  ПОДРОБНЫЙ РЕЖИМ
+    # ======================================================
+
+    if player_won:
+        return (
+            f"База: "
+            f"{result['base_points']} "
+            f"× x"
+            f"{result['streak_multiplier']:.1f} "
+            f"= {result['earned_points']} | "
+            f"Ставка: +{result['bet_bonus']}"
+        )
+
+    return (
+        f"Штраф: "
+        f"{result['base_penalty']} | "
+        f"Ставка: "
+        f"-{result['bet_penalty']} | "
+        f"Число было {secret_number}"
+    )
+
+
 def handle_game_click(mouse_pos):
-    global secret_number, attempts_left, game_over, win, message, tiles
-    global current_screen, selected_bet, current_bet, game_started
-    global custom_bet_active, custom_bet_error, reset_popup_open
-    global result_line_1, result_line_2
-    global balance_before_bet, started_all_in
+    global secret_number, attempts_left
+    global game_over, win, message, tiles
 
-    if reset_popup_open:
-        handle_reset_popup_click(mouse_pos)
-        return
+    global current_screen
+    global selected_bet, current_bet
+    global game_started
 
-    back_to_menu_button = get_back_to_menu_button()
-    restart_button = get_restart_button()
+    global custom_bet_active
+    global custom_bet_error
+
+    global result_line_1
+    global result_line_2
+
+    global balance_before_bet
+    global started_all_in
+
+    back_to_menu_button = (
+        get_back_to_menu_button()
+    )
+
+    restart_button = (
+        get_restart_button()
+    )
+
     bet_buttons = get_bet_buttons()
-    input_rect = get_custom_bet_input_rect()
-    apply_button = get_custom_bet_apply_button()
-    reset_button = get_reset_button()
 
-    if reset_button["rect"].collidepoint(mouse_pos):
-        custom_bet_active = False
-        reset_popup_open = True
-        return
+    input_rect = (
+        get_custom_bet_input_rect()
+    )
 
-    if back_to_menu_button["rect"].collidepoint(mouse_pos):
+    apply_button = (
+        get_custom_bet_apply_button()
+    )
+
+    all_in_button = (
+        get_all_in_bet_button()
+    )
+
+    if back_to_menu_button["rect"].collidepoint(
+        mouse_pos
+    ):
         custom_bet_active = False
-        save_progress()
-        current_screen = MENU
+
+        request_leave_game()
         return
 
     if get_can_change_bet() and score > 0 and input_rect.collidepoint(mouse_pos):
@@ -7668,12 +11475,36 @@ def handle_game_click(mouse_pos):
 
     if get_can_change_bet():
         for button in bet_buttons:
-            if button["rect"].collidepoint(mouse_pos) and button["active"]:
-                set_selected_bet(button["bet"])
+            if (
+                    button["rect"].collidepoint(
+                        mouse_pos
+                    )
+                    and button["active"]
+            ):
+                set_selected_bet(
+                    button["bet"]
+                )
+
                 custom_bet_error = ""
                 return
 
-    if game_over and restart_button["rect"].collidepoint(mouse_pos):
+    if (
+            all_in_button["rect"].collidepoint(
+                mouse_pos
+            )
+            and all_in_button["active"]
+    ):
+        set_selected_bet(score)
+
+        custom_bet_error = ""
+        return
+
+    if (
+            game_over
+            and restart_button["rect"].collidepoint(
+        mouse_pos
+    )
+    ):
         secret_number, attempts_left, game_over, win, message, tiles = start_new_game()
         return
 
@@ -7702,10 +11533,16 @@ def handle_game_click(mouse_pos):
 
                 result = finish_game(True)
 
-                result_line_1 = f"Победа! +{result['total']} очков"
+                result_line_1 = (
+                    f"Победа! "
+                    f"+{result['total']} очков"
+                )
+
                 result_line_2 = (
-                    f"База: {result['base_points']} × x{result['streak_multiplier']:.1f} = "
-                    f"{result['earned_points']} | Ставка: +{result['bet_bonus']}"
+                    get_result_details_text(
+                        result,
+                        player_won=True
+                    )
                 )
 
                 message = result_line_1
@@ -7744,13 +11581,19 @@ def handle_game_click(mouse_pos):
                 tile["color"] = RED
 
             if attempts_left == 0 and not win:
+
                 result = finish_game(False)
 
-                result_line_1 = f"Поражение! -{result['total']} очков"
+                result_line_1 = (
+                    f"Поражение! "
+                    f"-{result['total']} очков"
+                )
+
                 result_line_2 = (
-                    f"Штраф: {result['base_penalty']} | "
-                    f"Ставка: -{result['bet_penalty']} | "
-                    f"Число было {secret_number}"
+                    get_result_details_text(
+                        result,
+                        player_won=False
+                    )
                 )
 
                 message = result_line_1
@@ -7827,16 +11670,23 @@ def handle_debug_keys(
     command_pressed=False
 ):
     """
-    Обрабатывает временные developer-команды.
+    Обрабатывает глобальную команду открытия Developer Panel.
 
-    Глобальный вызов developer-панели через Cmd + 1.
+    Горячая клавиша работает только тогда, когда доступ
+    к панели включён в сохранённых настройках.
     """
-    if not DEVELOPER_MODE:
+
+    if not settings[
+        "developer"
+    ][
+        "enabled"
+    ]:
         return
 
     if (
-            command_pressed
-            and event.scancode == MAC_SCANCODE_1
+        command_pressed
+        and event.scancode
+        == MAC_SCANCODE_1
     ):
         if current_popup is None:
             open_developer_popup()
@@ -7845,24 +11695,36 @@ def handle_debug_keys(
 initialize_achievement_states()
 load_progress()
 
+# Режим окна применяется после загрузки настроек,
+# но до создания ScrollArea и начала главного цикла.
+apply_saved_window_mode()
+
 # Кумулятивные условия из старого сохранения выдаются сразу после миграции.
 # Уже завершённые достижения пропускаются, поэтому повторной награды XP нет.
 check_achievements()
 
 profile_scroll = create_scroll_area(
     WIDTH - 25,
-    150,
+    PROFILE_HEADER_HEIGHT,
     8,
-    400,
+    HEIGHT - PROFILE_HEADER_HEIGHT,
     1100
 )
 
 achievement_scroll = create_scroll_area(
     WIDTH - 25,
-    105,
+    HEADER_HEIGHT,
     8,
-    HEIGHT - 150,
+    HEIGHT - HEADER_HEIGHT,
     5000
+)
+
+settings_scroll = create_scroll_area(
+    WIDTH - 25,
+    SETTINGS_HEADER_HEIGHT,
+    8,
+    HEIGHT - SETTINGS_HEADER_HEIGHT,
+    1500
 )
 
 achievement_popup_scroll = create_scroll_area(
@@ -7887,11 +11749,75 @@ while running:
             running = False
 
         if event.type == pygame.VIDEORESIZE:
-            WIDTH = max(event.w, MIN_WIDTH)
-            HEIGHT = max(event.h, MIN_HEIGHT)
+            # В fullscreen размеры контролирует система.
+            # Ручной Resize обрабатываем только в оконном режиме.
+            if settings[
+                "interface"
+            ][
+                "window_mode"
+            ] == "windowed":
+                WIDTH = max(
+                    event.w,
+                    MIN_WIDTH
+                )
 
-            screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
-            update_tile_positions()
+                HEIGHT = max(
+                    event.h,
+                    MIN_HEIGHT
+                )
+
+                screen = pygame.display.set_mode(
+                    (
+                        WIDTH,
+                        HEIGHT
+                    ),
+                    pygame.RESIZABLE
+                )
+
+                settings[
+                    "interface"
+                ][
+                    "windowed_width"
+                ] = WIDTH
+
+                settings[
+                    "interface"
+                ][
+                    "windowed_height"
+                ] = HEIGHT
+
+                update_tile_positions()
+
+                # Сохраняем через короткую задержку:
+                # следующее Resize-событие просто обновит срок.
+                window_resize_save_deadline = (
+                        pygame.time.get_ticks()
+                        + 300
+                )
+
+            else:
+                WIDTH, HEIGHT = (
+                    screen.get_size()
+                )
+
+                update_tile_positions()
+
+        if event.type == pygame.MOUSEMOTION:
+            if (
+                active_settings_slider is not None
+                and current_popup is None
+                and current_screen == SETTINGS_SCREEN
+            ):
+                update_settings_slider_drag(
+                    event.pos
+                )
+
+        if (
+            event.type == pygame.MOUSEBUTTONUP
+            and event.button == 1
+            and active_settings_slider is not None
+        ):
+            finish_settings_slider_drag()
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             mouse_position = event.pos
@@ -7915,6 +11841,11 @@ while running:
             elif current_screen == ACHIEVEMENTS_SCREEN:
                 handle_achievements_click(mouse_position)
 
+            elif current_screen == SETTINGS_SCREEN:
+                handle_settings_click(
+                    mouse_position
+                )
+
         if event.type == pygame.KEYDOWN and is_command_key(event):
             command_key_pressed = True
 
@@ -7933,9 +11864,28 @@ while running:
                 elif current_popup == POPUP_DEVELOPER:
                     close_developer_popup()
 
+                elif current_popup == POPUP_DATA_RESET:
+                    close_data_reset_popup()
+
                 else:
                     current_popup = None
 
+                continue
+
+            if (
+                event.key == pygame.K_ESCAPE
+                and current_popup is None
+                and current_screen == SETTINGS_SCREEN
+            ):
+                current_screen = MENU
+                continue
+
+            if (
+                event.key == pygame.K_ESCAPE
+                and current_popup is None
+                and current_screen == GAME
+            ):
+                request_leave_game()
                 continue
 
             # Глобальные developer-команды
@@ -8000,6 +11950,26 @@ while running:
                     event
                 )
 
+            elif current_screen == SETTINGS_SCREEN:
+                handle_scroll_event(
+                    settings_scroll,
+                    event
+                )
+
+    # ======================================================
+    #              ОТЛОЖЕННОЕ СОХРАНЕНИЕ RESIZE
+    # ======================================================
+
+    if (
+        window_resize_save_deadline
+        is not None
+        and pygame.time.get_ticks()
+        >= window_resize_save_deadline
+    ):
+        save_progress()
+
+        window_resize_save_deadline = None
+
     if current_popup == POPUP_ACHIEVEMENTS:
         update_scroll(
             achievement_popup_scroll
@@ -8017,6 +11987,11 @@ while running:
                 achievement_scroll
             )
 
+        elif current_screen == SETTINGS_SCREEN:
+            update_scroll(
+                settings_scroll
+            )
+
     if current_screen == MENU:
         draw_menu()
 
@@ -8028,6 +12003,9 @@ while running:
 
     elif current_screen == ACHIEVEMENTS_SCREEN:
         draw_achievements_screen()
+
+    elif current_screen == SETTINGS_SCREEN:
+        draw_settings_screen()
 
     draw_popup()
 

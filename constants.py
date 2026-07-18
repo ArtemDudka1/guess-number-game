@@ -124,6 +124,10 @@ SCROLL_ACCELERATION = 16
 SCROLL_MAX_SPEED = 20
 SCROLL_FRICTION = 0.92
 
+# Расстояние одного события прокрутки
+# при отключённой плавности.
+SCROLL_DIRECT_STEP = 55
+
 # ---------- Achievement Rarity Colors ----------
 COMMON_COLOR = (170, 170, 170)
 RARE_COLOR = (52, 152, 219)
@@ -149,7 +153,7 @@ BIG_WIN_POINTS = 5000
 # ---------- Achievement UI ----------
 
 CARD_WIDTH = 620
-CARD_HEIGHT = 170
+CARD_HEIGHT = 180
 CARD_RADIUS = 15
 CARD_RARITY_WIDTH = 8
 
@@ -177,7 +181,7 @@ PROGRESS_TEXT_RIGHT = 30
 PROGRESS_TEXT_Y = 2
 
 PROGRESS_BAR_X = 70
-PROGRESS_BAR_Y = 85
+PROGRESS_BAR_Y = 110
 PROGRESS_BAR_RIGHT = 45
 PROGRESS_BAR_HEIGHT = 10
 
@@ -189,7 +193,7 @@ CARD_SPACING = 40
 
 # ---------- Screen Header ----------
 
-HEADER_HEIGHT = 80
+HEADER_HEIGHT = 120
 HEADER_LINE_WIDTH = 2
 
 HEADER_BOTTOM_MARGIN = 50
@@ -258,6 +262,7 @@ MENU = "menu"
 GAME = "game"
 PROFILE = "profile"
 ACHIEVEMENTS_SCREEN = "achievements"
+SETTINGS_SCREEN = "settings"
 
 # Файл сохранения. Переменная окружения используется тестами и отладочными
 # конфигурациями, а обычный запуск всегда хранит прогресс рядом с main.py.
@@ -273,17 +278,116 @@ TILE_SIZE = 70
 TILE_GAP = 10
 COLUMNS = 5
 
-# Правая боковая панель
+# ==========================================================
+#                    GAME SCREEN LAYOUT
+# ==========================================================
+
+# Фиксированный Header игрового экрана
+GAME_HEADER_HEIGHT = 120
+
+# Правая панель ставок
 SIDEBAR_MARGIN = 30
 PANEL_WIDTH = 340
 PANEL_GAP = 25
 
 STATS_PANEL_HEIGHT = 490
-BET_PANEL_HEIGHT = 365
+BET_PANEL_HEIGHT = 520
+
+# ==========================================================
+#                   LEVEL UP TOAST
+# ==========================================================
+
+LEVEL_UP_TOAST_WIDTH = 520
+LEVEL_UP_TOAST_HEIGHT = 100
+
+LEVEL_UP_TOAST_TOP_MARGIN = 20
+LEVEL_UP_TOAST_RADIUS = 20
+
+LEVEL_UP_TOAST_DURATION = 500
+LEVEL_UP_TOAST_FADE_DURATION = 180
+
+LEVEL_UP_TOAST_BACKGROUND = (
+    255,
+    252,
+    235
+)
+
+LEVEL_UP_TOAST_BORDER = (
+    230,
+    185,
+    65
+)
+
+# ==========================================================
+#                  SETTINGS SCREEN LAYOUT
+# ==========================================================
+
+SETTINGS_HEADER_HEIGHT = 120
+
+SETTINGS_CONTENT_WIDTH = 1000
+SETTINGS_SIDE_PADDING = 55
+
+SETTINGS_CONTENT_TOP_MARGIN = 40
+SETTINGS_CONTENT_BOTTOM_MARGIN = 60
+
+SETTINGS_SECTION_GAP = 25
+
+SETTINGS_SECTION_PADDING_X = 30
+SETTINGS_SECTION_PADDING_TOP = 24
+SETTINGS_SECTION_PADDING_BOTTOM = 24
+
+SETTINGS_SECTION_TITLE_HEIGHT = 38
+SETTINGS_ROW_HEIGHT = 48
+
+SETTINGS_SECTION_RADIUS = 18
+
+SETTINGS_TOGGLE_WIDTH = 72
+SETTINGS_TOGGLE_HEIGHT = 34
+SETTINGS_TOGGLE_KNOB_SIZE = 28
+
+SETTINGS_TOGGLE_TEXT_GAP = 12
+
+# ---------- Settings Option Selector ----------
+
+SETTINGS_OPTION_MIN_WIDTH = 110
+SETTINGS_OPTION_HEIGHT = 36
+SETTINGS_OPTION_GAP = 8
+SETTINGS_OPTION_PADDING_X = 18
+
+# ---------- Settings Slider ----------
+
+SETTINGS_SLIDER_WIDTH = 260
+SETTINGS_SLIDER_TRACK_HEIGHT = 8
+SETTINGS_SLIDER_KNOB_SIZE = 22
+
+SETTINGS_SLIDER_PERCENT_WIDTH = 65
+SETTINGS_SLIDER_PERCENT_GAP = 14
+
+SETTINGS_SLIDER_TRACK_COLOR = (185, 185, 185)
+SETTINGS_SLIDER_FILL_COLOR = BLUE
+SETTINGS_SLIDER_KNOB_COLOR = WHITE
+SETTINGS_SLIDER_KNOB_BORDER_COLOR = (140, 140, 140)
+
+# ---------- Settings Data Buttons ----------
+
+SETTINGS_DATA_BUTTON_WIDTH = 190
+SETTINGS_DATA_BUTTON_HEIGHT = 36
+
+# ---------- Data Reset Popup ----------
+
+DATA_RESET_POPUP_WIDTH = 620
+DATA_RESET_POPUP_HEIGHT = 350
+DATA_RESET_POPUP_RADIUS = 24
+
+DATA_RESET_POPUP_BUTTON_WIDTH = 180
+DATA_RESET_POPUP_BUTTON_HEIGHT = 50
+DATA_RESET_POPUP_BUTTON_GAP = 20
 
 POPUP_INFO = "info"
 POPUP_DIFFICULTY = "difficulty"
 POPUP_INPUT = "input"
 POPUP_CONFIRM = "confirm"
+POPUP_DATA_RESET = "data_reset"
+POPUP_UNFINISHED_EXIT = "unfinished_exit"
 POPUP_ACHIEVEMENTS = "achievements_unlocked"
 POPUP_DEVELOPER = "developer"
